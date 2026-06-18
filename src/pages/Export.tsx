@@ -1,13 +1,36 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { FileJson, CheckCircle2, Download, FileText } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { FileJson, CheckCircle2, Download, FileText, ArrowLeft, AlertCircle, X } from 'lucide-react'
 import Layout from '@/components/Layout'
 import { db } from '@/db'
 import { useAppStore } from '@/stores/useAppStore'
+import { useExportStore } from '@/stores/useExportStore'
 import { cn } from '@/lib/utils'
+
+interface LocationState {
+  exportId?: string
+  fromPage?: string
+  filter?: Record<string, unknown>
+  selectedTypes?: string[]
+  returnTo?: string
+}
 
 export default function Export() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const state = location.state as LocationState | null
+
+  const addToast = useAppStore((s) => s.addToast)
+  const role = useAppStore((s) => s.role)
+
+  const {
+    updateExportStatus,
+    setExportError,
+    clearExportError,
+    exportError,
+    currentExportId,
+  } = useExportStore()
+
   const [selected, setSelected] = useState<Record<string, boolean>>({
     templates: false,
     tasks: false,
@@ -18,8 +41,54 @@ export default function Export() {
   })
   const [exporting, setExporting] = useState(false)
   const [lastExportTime, setLastExportTime] = useState<number | null>(null)
-  const addToast = useAppStore((s) => s.addToast)
-  const role = useAppStore((s) => s.role)
+  const [exportCompleted, setExportCompleted] = useState(false)
+  const [pageError, setPageError] = useState<string | null>(null)
+
+  const activeExportId = useMemo(() => {
+    return state?.exportId || currentExportId
+  }, [state?.exportId, currentExportId])
+
+  const fromLogsPage = state?.fromPage === 'logs'
+  const returnTo = state?.returnTo || '/inspector/logs'
+
+  useEffect(() => {
+    if (state?.selectedTypes && state.selectedTypes.length > 0) {
+      setSelected((prev) => {
+        const newSelected = { ...prev }
+        state.selectedTypes!.forEach((key) => {
+          newSelected[key] = true
+        })
+        return newSelected
+      })
+    }
+    clearExportError()
+  }, [state?.selectedTypes, clearExportError])
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (exporting) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+
+    const handlePopState = () => {
+      if (exporting) {
+        const msg = '导出正在进行中，离开页面将导致导出中断。确定要离开吗？'
+        if (!window.confirm(msg)) {
+          window.history.pushState(null, '', location.pathname)
+        }
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [exporting, location.pathname])
 
   const exportOptions = [
     { key: 'templates', label: '模板数据', desc: '包含点位和检查项配置' },
@@ -30,6 +99,14 @@ export default function Export() {
     { key: 'eventLogs', label: '事件日志', desc: '所有操作的完整审计记录' },
   ]
 
+  const handleBack = () => {
+    if (exporting) {
+      const confirm = window.confirm('导出正在进行中，离开将导致导出中断。确定要返回吗？')
+      if (!confirm) return
+    }
+    navigate(-1)
+  }
+
   const handleExport = async () => {
     const keys = Object.keys(selected).filter((k) => selected[k])
     if (keys.length === 0) {
@@ -37,7 +114,18 @@ export default function Export() {
       return
     }
 
+    if (!activeExportId && fromLogsPage) {
+      const errorMsg = '导出记录不存在，无法继续导出。请返回日志页重新发起导出。'
+      setPageError(errorMsg)
+      setExportError(errorMsg)
+      addToast(errorMsg, 'error')
+      return
+    }
+
     setExporting(true)
+    setPageError(null)
+    clearExportError()
+
     try {
       const exportData: Record<string, unknown> = {
         exportedAt: Date.now(),
@@ -45,32 +133,79 @@ export default function Export() {
         appVersion: '1.0.0',
       }
 
+      let recordCount = 0
+
       for (const key of keys) {
-        if (key === 'templates') exportData[key] = await db.templates.toArray()
-        else if (key === 'tasks') exportData[key] = await db.tasks.toArray()
-        else if (key === 'drafts') exportData[key] = await db.drafts.toArray()
-        else if (key === 'submissions') exportData[key] = await db.submissions.toArray()
-        else if (key === 'anomalies') exportData[key] = await db.anomalies.toArray()
-        else if (key === 'eventLogs') exportData[key] = await db.eventLogs.toArray()
+        let data: unknown[] = []
+        if (key === 'templates') {
+          data = await db.templates.toArray()
+          exportData[key] = data
+        } else if (key === 'tasks') {
+          data = await db.tasks.toArray()
+          exportData[key] = data
+        } else if (key === 'drafts') {
+          data = await db.drafts.toArray()
+          exportData[key] = data
+        } else if (key === 'submissions') {
+          data = await db.submissions.toArray()
+          exportData[key] = data
+        } else if (key === 'anomalies') {
+          data = await db.anomalies.toArray()
+          exportData[key] = data
+        } else if (key === 'eventLogs') {
+          data = await db.eventLogs.toArray()
+          exportData[key] = data
+        }
+        recordCount += data.length
       }
 
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+      const jsonStr = JSON.stringify(exportData, null, 2)
+      const blob = new Blob([jsonStr], { type: 'application/json' })
+      const fileSize = blob.size
       const url = URL.createObjectURL(blob)
+      const fileName = `inspection-export-${new Date().toISOString().slice(0, 10)}-${Date.now()}.json`
       const a = document.createElement('a')
       a.href = url
-      a.download = `inspection-export-${new Date().toISOString().slice(0, 10)}-${Date.now()}.json`
+      a.download = fileName
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
 
+      if (activeExportId) {
+        const fileSummary = {
+          fileName,
+          fileSize,
+          recordCount,
+          dataTypes: keys,
+        }
+        await updateExportStatus(activeExportId, 'success', fileSummary)
+      }
+
       setLastExportTime(Date.now())
+      setExportCompleted(true)
       addToast('导出成功', 'success')
-    } catch {
-      addToast('导出失败', 'error')
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '导出过程中发生未知错误'
+
+      if (activeExportId) {
+        await updateExportStatus(activeExportId, 'failed', undefined, errorMsg)
+      }
+
+      setPageError(errorMsg)
+      setExportError(errorMsg)
+      addToast(`导出失败：${errorMsg}`, 'error')
     } finally {
       setExporting(false)
     }
+  }
+
+  const handleReturnToLogs = () => {
+    if (exporting) {
+      const confirm = window.confirm('导出正在进行中，离开将导致导出中断。确定要返回吗？')
+      if (!confirm) return
+    }
+    navigate(returnTo, { replace: true })
   }
 
   const toggleAll = () => {
@@ -82,11 +217,90 @@ export default function Export() {
   return (
     <Layout
       title="数据导出"
-      onBack={() => navigate(-1)}
+      onBack={handleBack}
       showNav
       navRole={role || 'admin'}
     >
       <div className="p-4 space-y-4">
+        {exportError && !pageError && (
+          <div className="rounded-xl bg-red-50 border border-red-200 p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-red-800">导出出错</p>
+                  <p className="text-xs text-red-600 mt-0.5">{exportError}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  clearExportError()
+                }}
+                className="text-red-400 hover:text-red-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {fromLogsPage && (
+              <button
+                onClick={handleReturnToLogs}
+                className="mt-3 flex items-center gap-1 text-xs text-red-700 bg-red-100 px-3 py-1.5 rounded hover:bg-red-200"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                返回日志页重新发起
+              </button>
+            )}
+          </div>
+        )}
+
+        {pageError && (
+          <div className="rounded-xl bg-red-50 border border-red-200 p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-red-800">导出出错</p>
+                  <p className="text-xs text-red-600 mt-0.5">{pageError}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setPageError(null)
+                  clearExportError()
+                }}
+                className="text-red-400 hover:text-red-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {fromLogsPage && (
+              <button
+                onClick={handleReturnToLogs}
+                className="mt-3 flex items-center gap-1 text-xs text-red-700 bg-red-100 px-3 py-1.5 rounded hover:bg-red-200"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                返回日志页重新发起
+              </button>
+            )}
+          </div>
+        )}
+
+        {fromLogsPage && activeExportId && (
+          <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-500" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-800">
+                  从日志页发起的导出
+                </p>
+                <p className="text-xs text-blue-600">
+                  完成后将自动记录导出历史，可返回日志页查看和复核
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="rounded-xl bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <FileJson className="h-5 w-5 text-primary" />
@@ -141,19 +355,45 @@ export default function Export() {
 
         {lastExportTime && (
           <div className="rounded-xl bg-green-50 border border-green-200 p-4">
-            <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-green-600" />
-              <div>
-                <p className="text-sm font-medium text-green-800">上次导出</p>
-                <p className="text-xs text-green-600">
-                  {new Date(lastExportTime).toLocaleString('zh-CN')}
-                </p>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-green-600" />
+                <div>
+                  <p className="text-sm font-medium text-green-800">上次导出</p>
+                  <p className="text-xs text-green-600">
+                    {new Date(lastExportTime).toLocaleString('zh-CN')}
+                  </p>
+                </div>
               </div>
+              {fromLogsPage && exportCompleted && (
+                <button
+                  onClick={handleReturnToLogs}
+                  className="flex items-center gap-1 text-xs text-green-700 bg-green-100 px-3 py-1.5 rounded hover:bg-green-200"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  返回日志页查看记录
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        <div className="sticky bottom-0 pt-4">
+        <div className="sticky bottom-0 pt-4 space-y-2">
+          {fromLogsPage && (
+            <button
+              onClick={handleReturnToLogs}
+              disabled={exporting}
+              className={cn(
+                'flex w-full items-center justify-center gap-2 rounded-lg h-10 text-sm font-medium transition-colors',
+                exporting
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              )}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              返回日志页
+            </button>
+          )}
           <button
             onClick={handleExport}
             disabled={exporting || !Object.values(selected).some(Boolean)}

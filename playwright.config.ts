@@ -10,7 +10,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: '**/export-round4.spec.ts',
+  testMatch: '**/export-round5.spec.ts',
   fullyParallel: false,
   retries: 0,
   reporter: 'line',
@@ -18,6 +18,7 @@ export default defineConfig({
     baseURL: 'http://localhost:5173',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    acceptDownloads: true,
     // ⭐ 不用 chrome-headless-shell（Windows 下 ICU 文件描述符问题），强制完整浏览器
     headless: false,
     launchOptions: {

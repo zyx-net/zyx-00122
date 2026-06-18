@@ -82,3 +82,39 @@ export interface EventLog {
 }
 
 export type UserRole = 'inspector' | 'admin'
+
+export type ExportStatus = 'pending' | 'success' | 'failed'
+
+export interface ExportFilter {
+  action?: EventAction
+  taskId?: string
+  from?: number
+  to?: number
+}
+
+export interface ExportRecord {
+  id: string
+  triggeredAt: number
+  filter: ExportFilter
+  selectedTypes: string[]
+  fileSummary: {
+    fileName: string
+    fileSize: number
+    recordCount: number
+    dataTypes: string[]
+  } | null
+  status: ExportStatus
+  errorMessage?: string
+  exportedBy: string
+  taskSnapshot?: {
+    taskId: string
+    status: TaskStatus
+    title: string
+    assignee: string
+  } | null
+  logSnapshot?: Array<{
+    action: EventAction
+    detail: string
+    timestamp: number
+  }> | null
+}
