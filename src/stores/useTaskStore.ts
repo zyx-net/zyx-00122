@@ -16,6 +16,7 @@ interface TaskState {
   fetchEventLogs: (filters?: { taskId?: string; action?: EventAction; from?: number; to?: number }) => Promise<void>
 
   claimTask: (taskId: string, assignee: string) => Promise<void>
+  readDraft: (taskId: string) => Promise<Draft | null>
   loadDraft: (taskId: string) => Promise<void>
   saveDraft: (taskId: string, templateVersion: string, answers: Record<string, unknown>) => Promise<void>
   submitTask: (taskId: string, answers: Record<string, unknown>) => Promise<{ ok: boolean; errors: string[] }>
@@ -89,6 +90,11 @@ export const useTaskStore = create<TaskState>((set) => ({
       tasks: s.tasks.map((t) => (t.id === taskId ? updated : t)),
       eventLogs: [eventLog, ...s.eventLogs],
     }))
+  },
+
+  readDraft: async (taskId) => {
+    const draft = await db.drafts.where('taskId').equals(taskId).first()
+    return draft || null
   },
 
   loadDraft: async (taskId) => {

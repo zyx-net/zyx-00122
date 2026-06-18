@@ -20,7 +20,7 @@ function formatTime(ts: number) {
 export default function TaskList() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'available' | 'mine'>('available')
-  const { tasks, fetchTasks, claimTask, loadDraft } = useTaskStore()
+  const { tasks, fetchTasks, claimTask, readDraft } = useTaskStore()
   const addToast = useAppStore((s) => s.addToast)
   const [claimingId, setClaimingId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, number>>({})
@@ -30,17 +30,16 @@ export default function TaskList() {
   }, [])
 
   useEffect(() => {
-    const loadDraftTimes = async () => {
+    const readDraftTimes = async () => {
       const map: Record<string, number> = {}
       for (const t of tasks.filter((t) => t.status !== 'available')) {
-        await loadDraft(t.id)
-        const draft = useTaskStore.getState().currentDraft
+        const draft = await readDraft(t.id)
         if (draft) map[t.id] = draft.savedAt
       }
       setDrafts(map)
     }
-    loadDraftTimes()
-  }, [tasks])
+    readDraftTimes()
+  }, [tasks, readDraft])
 
   const availableTasks = tasks.filter((t) => t.status === 'available')
   const myTasks = tasks.filter((t) => t.status !== 'available' && t.assignee)
