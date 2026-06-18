@@ -97,6 +97,9 @@ export const useTaskStore = create<TaskState>((set) => ({
   },
 
   saveDraft: async (taskId, templateVersion, answers) => {
+    const task = await db.tasks.get(taskId)
+    if (!task) return
+    if (task.status === 'submitted' || task.status === 'approved') return
     const now = Date.now()
     const existing = await db.drafts.where('taskId').equals(taskId).first()
     const draft: Draft = existing
@@ -113,6 +116,10 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     if (task.status === 'submitted') {
       errors.push('任务已提交，不可重复提交')
+      return { ok: false, errors }
+    }
+    if (task.status === 'approved') {
+      errors.push('任务已审核通过，不可再提交')
       return { ok: false, errors }
     }
 
@@ -163,6 +170,22 @@ export const useTaskStore = create<TaskState>((set) => ({
     }
 
     const now = Date.now()
+    const latestTask = await db.tasks.get(taskId)
+    if (!latestTask) { errors.push('任务不存在'); return { ok: false, errors } }
+    if (latestTask.status === 'submitted' || latestTask.status === 'approved') {
+      errors.push(latestTask.status === 'approved' ? '任务已审核通过，不可再提交' : '任务已提交，不可重复提交')
+      const rejectLog: EventLog = {
+        id: `log-${now}-${Math.random().toString(36).slice(2, 7)}`,
+        taskId,
+        action: 'reject',
+        actor: latestTask.assignee,
+        detail: `提交被拒绝：${errors.join('；')}`,
+        timestamp: now,
+      }
+      await db.eventLogs.add(rejectLog)
+      set((s) => ({ eventLogs: [rejectLog, ...s.eventLogs] }))
+      return { ok: false, errors }
+    }
     const existingSubmissions = await db.submissions.where('taskId').equals(taskId).toArray()
     const maxVersion = existingSubmissions.reduce((max, s) => Math.max(max, s.version), 0)
     const submission: Submission = {
@@ -175,7 +198,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     }
     await db.submissions.add(submission)
 
-    const updatedTask: Task = { ...task, status: 'submitted' as TaskStatus, updatedAt: now }
+    const updatedTask: Task = { ...latestTask, status: 'submitted' as TaskStatus, updatedAt: now }
     await db.tasks.put(updatedTask)
 
     await db.drafts.where('taskId').equals(taskId).delete()
@@ -234,6 +257,8 @@ export const useTaskStore = create<TaskState>((set) => ({
   approveTask: async (taskId) => {
     const task = await db.tasks.get(taskId)
     if (!task) throw new Error('任务不存在')
+    if (task.status === 'approved') throw new Error('任务已审核通过')
+    if (task.status !== 'submitted') throw new Error('当前状态不可审核')
 
     const now = Date.now()
     const lastSubmission = await db.submissions.where('taskId').equals(taskId).reverse().first()

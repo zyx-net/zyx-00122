@@ -47,23 +47,34 @@ export default function Inspect() {
       await fetchTemplates()
       if (taskId) {
         const t = useTaskStore.getState().tasks.find((t) => t.id === taskId)
-        if (t) {
-          const tmpl = await getTemplate(t.templateId)
-          if (tmpl) setTemplate(tmpl)
-          await loadDraft(taskId)
-          await fetchSubmissions(taskId)
-          const draft = useTaskStore.getState().currentDraft
-          if (draft) {
-            setAnswers(draft.answers)
-            setDraftSavedAt(draft.savedAt)
-            if (draft.templateVersion !== tmpl?.version) {
-              setVersionMismatch(`当前模板已更新至 v${tmpl?.version}，您的草稿为 v${draft.templateVersion}，请联系管理员或重新填写`)
-            }
+        if (!t) {
+          addToast('任务不存在', 'error')
+          navigate('/inspector/tasks')
+          return
+        }
+        if (t.status === 'approved') {
+          addToast('任务已审核通过，不可再编辑', 'warning')
+          navigate('/inspector/tasks')
+          return
+        }
+        const tmpl = await getTemplate(t.templateId)
+        if (tmpl) setTemplate(tmpl)
+        await loadDraft(taskId)
+        await fetchSubmissions(taskId)
+        const draft = useTaskStore.getState().currentDraft
+        if (draft) {
+          setAnswers(draft.answers)
+          setDraftSavedAt(draft.savedAt)
+          if (draft.templateVersion !== tmpl?.version) {
+            setVersionMismatch(`当前模板已更新至 v${tmpl?.version}，您的草稿为 v${draft.templateVersion}，请联系管理员或重新填写`)
           }
         }
       }
     }
     init()
+    return () => {
+      if (debounceTimer.current) window.clearTimeout(debounceTimer.current)
+    }
   }, [taskId])
 
   useEffect(() => {
@@ -134,6 +145,15 @@ export default function Inspect() {
     if (task?.status === 'submitted') {
       addToast('任务已提交，不可重复提交', 'error')
       return
+    }
+    if (task?.status === 'approved') {
+      addToast('任务已审核通过，不可再提交', 'error')
+      return
+    }
+
+    if (debounceTimer.current) {
+      window.clearTimeout(debounceTimer.current)
+      debounceTimer.current = null
     }
 
     setIsSubmitting(true)
@@ -298,15 +318,21 @@ export default function Inspect() {
         <div className="px-4 pb-4">
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting || task?.status === 'submitted'}
+            disabled={isSubmitting || task?.status === 'submitted' || task?.status === 'approved'}
             className={cn(
               'w-full rounded-lg h-12 text-sm font-semibold transition-colors',
-              isSubmitting || task?.status === 'submitted'
+              isSubmitting || task?.status === 'submitted' || task?.status === 'approved'
                 ? 'bg-amber-200 text-amber-100 cursor-not-allowed'
                 : 'bg-accent text-white hover:bg-amber-600 active:bg-amber-700'
             )}
           >
-            {isSubmitting ? '提交中...' : task?.status === 'submitted' ? '已提交' : '提交巡检结果'}
+            {isSubmitting
+              ? '提交中...'
+              : task?.status === 'submitted'
+              ? '已提交'
+              : task?.status === 'approved'
+              ? '已通过'
+              : '提交巡检结果'}
           </button>
         </div>
       </div>
