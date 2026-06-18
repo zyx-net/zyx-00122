@@ -70,7 +70,7 @@ export interface Anomaly {
   reportedAt: number
 }
 
-export type EventAction = 'claim' | 'save_draft' | 'submit' | 'rework' | 'approve' | 'anomaly' | 'reject'
+export type EventAction = 'claim' | 'save_draft' | 'draft_save' | 'draft_load' | 'submit' | 'rework' | 'approve' | 'anomaly' | 'reject'
 
 export interface EventLog {
   id: string

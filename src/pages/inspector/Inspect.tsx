@@ -40,6 +40,7 @@ export default function Inspect() {
 
   const debounceTimer = useRef<number | null>(null)
   const task = useTaskStore((s) => s.tasks.find((t) => t.id === taskId))
+  const isReadOnly = task?.status === 'submitted' || task?.status === 'approved'
 
   useEffect(() => {
     const init = async () => {
@@ -52,21 +53,33 @@ export default function Inspect() {
           navigate('/inspector/tasks')
           return
         }
-        if (t.status === 'approved') {
-          addToast('任务已审核通过，不可再编辑', 'warning')
-          navigate('/inspector/tasks')
-          return
-        }
         const tmpl = await getTemplate(t.templateId)
         if (tmpl) setTemplate(tmpl)
-        await loadDraft(taskId)
         await fetchSubmissions(taskId)
-        const draft = useTaskStore.getState().currentDraft
-        if (draft) {
-          setAnswers(draft.answers)
-          setDraftSavedAt(draft.savedAt)
-          if (draft.templateVersion !== tmpl?.version) {
-            setVersionMismatch(`当前模板已更新至 v${tmpl?.version}，您的草稿为 v${draft.templateVersion}，请联系管理员或重新填写`)
+
+        const readOnly = t.status === 'submitted' || t.status === 'approved'
+        if (readOnly) {
+          const subs = useTaskStore.getState().submissions
+          const latest = subs.length > 0
+            ? subs.reduce((a, b) => (a.version > b.version ? a : b))
+            : null
+          if (latest) {
+            setAnswers(latest.answers)
+          }
+          if (t.status === 'approved') {
+            addToast('任务已审核通过，仅可查看', 'info')
+          } else if (t.status === 'submitted') {
+            addToast('任务已提交待审核，仅可查看', 'info')
+          }
+        } else {
+          await loadDraft(taskId)
+          const draft = useTaskStore.getState().currentDraft
+          if (draft) {
+            setAnswers(draft.answers)
+            setDraftSavedAt(draft.savedAt)
+            if (draft.templateVersion !== tmpl?.version) {
+              setVersionMismatch(`当前模板已更新至 v${tmpl?.version}，您的草稿为 v${draft.templateVersion}，请联系管理员或重新填写`)
+            }
           }
         }
       }
@@ -86,6 +99,7 @@ export default function Inspect() {
 
   const saveDraftDebounced = useMemo(() => {
     if (!taskId || !template) return () => {}
+    if (isReadOnly) return () => {}
     return (newAnswers: Record<string, unknown>) => {
       if (debounceTimer.current) window.clearTimeout(debounceTimer.current)
       setIsSaving(true)
@@ -101,9 +115,10 @@ export default function Inspect() {
         }
       }, 500)
     }
-  }, [taskId, template])
+  }, [taskId, template, isReadOnly])
 
   const handleValueChange = (itemId: string, value: unknown) => {
+    if (isReadOnly) return
     const newAnswers = { ...answers, [itemId]: value }
     setAnswers(newAnswers)
     setErrors((prev) => {
@@ -204,7 +219,11 @@ export default function Inspect() {
       title={task?.title || '巡检填写'}
       onBack={() => navigate('/inspector/tasks')}
       rightAction={
-        isSaving ? (
+        isReadOnly ? (
+          <span className="text-xs text-white/90">
+            v{template?.version}
+          </span>
+        ) : isSaving ? (
           <span className="text-xs text-white/80">保存中...</span>
         ) : draftSavedAt ? (
           <span className="text-xs text-white/80">
@@ -214,6 +233,22 @@ export default function Inspect() {
         ) : null
       }
     >
+      {isReadOnly && (
+        <div className="mx-4 mt-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
+            <div>
+              <p className="text-sm font-medium text-blue-800">
+                {task?.status === 'approved' ? '已审核通过' : '已提交待审核'}
+              </p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                该任务当前为只读模式，可查看填写内容，不可编辑
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {reworkReason && (
         <div className="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
           <div className="flex items-start gap-2">
@@ -252,10 +287,15 @@ export default function Inspect() {
                   value={answers[item.id]}
                   onChange={(val) => handleValueChange(item.id, val)}
                   error={errors[item.id]}
+                  disabled={isReadOnly}
                 />
                 <button
-                  onClick={() => handleAnomaly(item)}
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100"
+                  onClick={() => !isReadOnly && handleAnomaly(item)}
+                  disabled={isReadOnly}
+                  className={cn(
+                    'mt-3 inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors',
+                    isReadOnly ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-100'
+                  )}
                 >
                   <AlertTriangle className="h-3.5 w-3.5" />
                   标记异常

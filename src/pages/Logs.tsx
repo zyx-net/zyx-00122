@@ -21,6 +21,8 @@ function formatTime(ts: number) {
 const actionConfig: Record<EventAction, { label: string; color: string; bg: string }> = {
   claim: { label: '领取任务', color: 'text-blue-700', bg: 'bg-blue-100' },
   save_draft: { label: '保存草稿', color: 'text-gray-700', bg: 'bg-gray-100' },
+  draft_save: { label: '自动保存', color: 'text-indigo-700', bg: 'bg-indigo-100' },
+  draft_load: { label: '恢复草稿', color: 'text-cyan-700', bg: 'bg-cyan-100' },
   submit: { label: '提交', color: 'text-accent', bg: 'bg-amber-100' },
   rework: { label: '退回返工', color: 'text-red-700', bg: 'bg-red-100' },
   approve: { label: '审核通过', color: 'text-green-700', bg: 'bg-green-100' },
@@ -32,6 +34,8 @@ const actionOptions: { value: EventAction | 'all'; label: string }[] = [
   { value: 'all', label: '全部' },
   { value: 'claim', label: '领取' },
   { value: 'save_draft', label: '草稿' },
+  { value: 'draft_save', label: '自动保存' },
+  { value: 'draft_load', label: '恢复草稿' },
   { value: 'submit', label: '提交' },
   { value: 'rework', label: '退回' },
   { value: 'approve', label: '通过' },
@@ -42,19 +46,20 @@ const actionOptions: { value: EventAction | 'all'; label: string }[] = [
 export default function Logs() {
   const navigate = useNavigate()
   const { taskId: paramTaskId } = useParams()
-  const { eventLogs, fetchEventLogs, tasks } = useTaskStore()
+  const { eventLogs, fetchEventLogs, fetchTasks, tasks } = useTaskStore()
   const role = useAppStore((s) => s.role)
 
   const [filter, setFilter] = useState<EventAction | 'all'>('all')
   const [showFilters, setShowFilters] = useState(false)
 
   useEffect(() => {
+    fetchTasks()
     if (paramTaskId) {
       fetchEventLogs({ taskId: paramTaskId })
     } else {
       fetchEventLogs()
     }
-  }, [paramTaskId])
+  }, [paramTaskId, fetchTasks, fetchEventLogs])
 
   const filteredLogs = useMemo(() => {
     if (filter === 'all') return eventLogs

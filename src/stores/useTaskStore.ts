@@ -93,7 +93,25 @@ export const useTaskStore = create<TaskState>((set) => ({
 
   loadDraft: async (taskId) => {
     const draft = await db.drafts.where('taskId').equals(taskId).first()
-    set({ currentDraft: draft || null })
+    if (draft) {
+      const now = Date.now()
+      const task = await db.tasks.get(taskId)
+      const eventLog: EventLog = {
+        id: `log-${now}-${Math.random().toString(36).slice(2, 7)}`,
+        taskId,
+        action: 'draft_load',
+        actor: task?.assignee || '巡检员',
+        detail: `草稿已恢复（模板 v${draft.templateVersion}，保存于 ${new Date(draft.savedAt).toLocaleString('zh-CN')}，共 ${Object.keys(draft.answers).length} 项答案）`,
+        timestamp: now,
+      }
+      await db.eventLogs.add(eventLog)
+      set((s) => ({
+        currentDraft: draft,
+        eventLogs: [eventLog, ...s.eventLogs],
+      }))
+    } else {
+      set({ currentDraft: null })
+    }
   },
 
   saveDraft: async (taskId, templateVersion, answers) => {
@@ -106,7 +124,21 @@ export const useTaskStore = create<TaskState>((set) => ({
       ? { ...existing, answers, templateVersion, savedAt: now }
       : { id: `draft-${now}-${Math.random().toString(36).slice(2, 7)}`, taskId, templateVersion, answers, savedAt: now }
     await db.drafts.put(draft)
-    set({ currentDraft: draft })
+
+    const eventLog: EventLog = {
+      id: `log-${now}-${Math.random().toString(36).slice(2, 7)}`,
+      taskId,
+      action: 'draft_save',
+      actor: task.assignee || '巡检员',
+      detail: `草稿已保存（模板 v${templateVersion}，共 ${Object.keys(answers).length} 项答案）${existing ? '（更新）' : '（新建）'}`,
+      timestamp: now,
+    }
+    await db.eventLogs.add(eventLog)
+
+    set((s) => ({
+      currentDraft: draft,
+      eventLogs: [eventLog, ...s.eventLogs],
+    }))
   },
 
   submitTask: async (taskId, answers) => {

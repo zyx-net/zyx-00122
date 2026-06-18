@@ -7,9 +7,10 @@ interface CheckItemInputProps {
   value: unknown
   onChange: (val: unknown) => void
   error?: string
+  disabled?: boolean
 }
 
-export default function CheckItemInput({ item, value, onChange, error }: CheckItemInputProps) {
+export default function CheckItemInput({ item, value, onChange, error, disabled = false }: CheckItemInputProps) {
   const strValue = (value as string) ?? ''
   const numValue = (value as number) ?? ''
 
@@ -26,9 +27,11 @@ export default function CheckItemInput({ item, value, onChange, error }: CheckIt
           value={strValue}
           onChange={(e) => onChange(e.target.value)}
           placeholder={item.placeholder}
+          disabled={disabled}
           className={cn(
             'w-full rounded-lg border bg-white px-3 h-12 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400',
-            error ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-primary'
+            error ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-primary',
+            disabled && 'bg-gray-50 text-gray-500 cursor-not-allowed opacity-70'
           )}
         />
       )}
@@ -41,9 +44,11 @@ export default function CheckItemInput({ item, value, onChange, error }: CheckIt
           min={item.min}
           max={item.max}
           placeholder={item.placeholder}
+          disabled={disabled}
           className={cn(
             'w-full rounded-lg border bg-white px-3 h-12 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 font-mono',
-            error ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-primary'
+            error ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-primary',
+            disabled && 'bg-gray-50 text-gray-500 cursor-not-allowed opacity-70'
           )}
         />
       )}
@@ -54,12 +59,14 @@ export default function CheckItemInput({ item, value, onChange, error }: CheckIt
             <button
               key={opt}
               type="button"
-              onClick={() => onChange(opt)}
+              onClick={() => !disabled && onChange(opt)}
+              disabled={disabled}
               className={cn(
                 'rounded-lg border px-4 h-10 text-sm font-medium transition-colors',
                 strValue === opt
                   ? 'border-primary bg-primary text-white'
-                  : 'border-gray-300 bg-white text-gray-700'
+                  : 'border-gray-300 bg-white text-gray-700',
+                disabled && 'opacity-50 cursor-not-allowed'
               )}
             >
               {opt}
@@ -71,8 +78,12 @@ export default function CheckItemInput({ item, value, onChange, error }: CheckIt
       {item.type === 'attachment' && (
         <button
           type="button"
-          onClick={() => onChange('placeholder_file.jpg')}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 bg-white h-20 text-sm text-gray-500 transition-colors hover:border-accent hover:text-accent"
+          onClick={() => !disabled && onChange('placeholder_file.jpg')}
+          disabled={disabled}
+          className={cn(
+            'flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 bg-white h-20 text-sm text-gray-500 transition-colors hover:border-accent hover:text-accent',
+            disabled && 'opacity-50 cursor-not-allowed hover:border-gray-300 hover:text-gray-500'
+          )}
         >
           <Upload className="h-5 w-5" />
           <span>点击上传附件</span>

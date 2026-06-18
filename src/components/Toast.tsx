@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { X, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react'
+import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/useAppStore'
 
@@ -7,6 +7,7 @@ const typeConfig = {
   success: { icon: CheckCircle, bg: 'bg-green-50 border-green-200', text: 'text-green-800', iconColor: 'text-green-500' },
   error: { icon: AlertCircle, bg: 'bg-red-50 border-red-200', text: 'text-red-800', iconColor: 'text-red-500' },
   warning: { icon: AlertTriangle, bg: 'bg-amber-50 border-amber-200', text: 'text-amber-800', iconColor: 'text-amber-500' },
+  info: { icon: Info, bg: 'bg-blue-50 border-blue-200', text: 'text-blue-800', iconColor: 'text-blue-500' },
 }
 
 export default function Toast() {
@@ -24,7 +25,7 @@ export default function Toast() {
   )
 }
 
-function ToastItem({ id, message, type, onDismiss }: { id: string; message: string; type: 'success' | 'error' | 'warning'; onDismiss: (id: string) => void }) {
+function ToastItem({ id, message, type, onDismiss }: { id: string; message: string; type: 'success' | 'error' | 'warning' | 'info'; onDismiss: (id: string) => void }) {
   const config = typeConfig[type]
   const Icon = config.icon
 

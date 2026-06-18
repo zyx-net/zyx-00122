@@ -5,8 +5,8 @@ interface AppState {
   role: UserRole | null
   setRole: (role: UserRole) => void
   clearRole: () => void
-  toasts: Array<{ id: string; message: string; type: 'success' | 'error' | 'warning' }>
-  addToast: (message: string, type?: 'success' | 'error' | 'warning') => void
+  toasts: Array<{ id: string; message: string; type: 'success' | 'error' | 'warning' | 'info' }>
+  addToast: (message: string, type?: 'success' | 'error' | 'warning' | 'info') => void
   removeToast: (id: string) => void
 }
 
