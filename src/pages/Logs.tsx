@@ -5,7 +5,7 @@ import Layout from '@/components/Layout'
 import EmptyState from '@/components/EmptyState'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { useAppStore } from '@/stores/useAppStore'
-import { useExportStore } from '@/stores/useExportStore'
+import { useExportStore, normalizeExportRecord } from '@/stores/useExportStore'
 import type { EventAction, ExportRecord } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -119,7 +119,7 @@ function ExportRecordCard({ record, onView }: { record: ExportRecord; onView: (r
             </p>
           )}
         </div>
-        {(record.status === 'success' || record.logSnapshot) && (
+        {(record.status === 'success' || record.logSnapshot || record.failureTrace || record.pageContext || record.keyFieldsSnapshot) && (
           <button
             onClick={() => onView(record)}
             className="flex-shrink-0 flex items-center gap-1 text-xs text-primary hover:text-primary/80"
@@ -135,6 +135,8 @@ function ExportRecordCard({ record, onView }: { record: ExportRecord; onView: (r
 
 function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () => void }) {
   const [expanded, setExpanded] = useState(true)
+  const [failureExpanded, setFailureExpanded] = useState(true)
+  const hasFailureTrace = record.failureTrace && record.failureTrace.length > 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -176,8 +178,104 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
                   <span className="text-gray-900">{formatFileSize(record.fileSummary.fileSize)}</span>
                 </div>
               )}
+              {record.appVersion && (
+                <div>
+                  <span className="text-gray-500">应用版本：</span>
+                  <span className="text-gray-900 font-mono">{record.appVersion}</span>
+                </div>
+              )}
+              {record.completedAt && (
+                <div>
+                  <span className="text-gray-500">完成时间：</span>
+                  <span className="text-gray-900">{formatTime(record.completedAt)}</span>
+                </div>
+              )}
             </div>
           </div>
+
+          {record.pageContext && (
+            <div className="rounded-lg bg-purple-50 border border-purple-100 p-3">
+              <p className="text-sm font-medium text-purple-900 mb-2">页面上下文快照</p>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-purple-500">路由：</span>
+                  <span className="text-purple-900 font-mono">{record.pageContext.route}</span>
+                </div>
+                <div>
+                  <span className="text-purple-500">视图模式：</span>
+                  <span className="text-purple-900">{record.pageContext.viewMode === 'all' ? '全部日志' : '单任务'}</span>
+                </div>
+                <div>
+                  <span className="text-purple-500">屏幕尺寸：</span>
+                  <span className="text-purple-900 font-mono">{record.pageContext.screenSize.width}×{record.pageContext.screenSize.height}</span>
+                </div>
+                {record.pageContext.currentTaskId && (
+                  <div>
+                    <span className="text-purple-500">任务ID：</span>
+                    <span className="text-purple-900 font-mono">{record.pageContext.currentTaskId.slice(-8)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {record.keyFieldsSnapshot && (
+            <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-3">
+              <p className="text-sm font-medium text-indigo-900 mb-2">关键字段快照</p>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <span className="text-indigo-500">总任务数：</span>
+                  <span className="text-indigo-900 font-medium">{record.keyFieldsSnapshot.totalTaskCount}</span>
+                </div>
+                <div>
+                  <span className="text-indigo-500">进行中：</span>
+                  <span className="text-indigo-900 font-medium">{record.keyFieldsSnapshot.inProgressCount}</span>
+                </div>
+                <div>
+                  <span className="text-indigo-500">已完成：</span>
+                  <span className="text-indigo-900 font-medium">{record.keyFieldsSnapshot.completedCount}</span>
+                </div>
+                <div>
+                  <span className="text-indigo-500">日志总数：</span>
+                  <span className="text-indigo-900 font-medium">{record.keyFieldsSnapshot.logCount}</span>
+                </div>
+                <div>
+                  <span className="text-indigo-500">草稿数：</span>
+                  <span className="text-indigo-900 font-medium">{record.keyFieldsSnapshot.draftCount}</span>
+                </div>
+                <div>
+                  <span className="text-indigo-500">异常数：</span>
+                  <span className="text-indigo-900 font-medium">{record.keyFieldsSnapshot.anomalyCount}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {record.sortInfo && (
+            <div className="rounded-lg bg-cyan-50 border border-cyan-100 p-3">
+              <p className="text-sm font-medium text-cyan-900 mb-2">排序与范围快照</p>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-cyan-500">排序字段：</span>
+                  <span className="text-cyan-900">
+                    {record.sortInfo.sortBy === 'timestamp' ? '时间' :
+                     record.sortInfo.sortBy === 'action' ? '操作类型' : '任务ID'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-cyan-500">排序方向：</span>
+                  <span className="text-cyan-900">{record.sortInfo.sortOrder === 'desc' ? '倒序' : '正序'}</span>
+                </div>
+                <div>
+                  <span className="text-cyan-500">可见范围：</span>
+                  <span className="text-cyan-900 font-mono">
+                    {record.sortInfo.visibleRange.start + 1}-{record.sortInfo.visibleRange.end}
+                    /{record.sortInfo.visibleRange.total}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {record.taskSnapshot && (
             <div className="rounded-lg bg-blue-50 border border-blue-100 p-3">
@@ -203,6 +301,52 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
             </div>
           )}
 
+          {hasFailureTrace && (
+            <div>
+              <button
+                onClick={() => setFailureExpanded(!failureExpanded)}
+                className="w-full flex items-center justify-between rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-200"
+              >
+                <span>失败追踪日志（{record.failureTrace!.length} 条）</span>
+                {failureExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </button>
+              {failureExpanded && (
+                <div className="mt-2 rounded-lg border border-red-200 max-h-48 overflow-y-auto">
+                  {record.failureTrace!.map((trace, idx) => (
+                    <div
+                      key={idx}
+                      data-testid="failure-trace-item"
+                      className={cn(
+                        'flex items-start gap-2 px-3 py-2 border-b border-gray-100 last:border-0',
+                        trace.severity === 'error' ? 'bg-red-50' :
+                        trace.severity === 'warning' ? 'bg-amber-50' : 'bg-white'
+                      )}
+                    >
+                      <span className="flex-shrink-0 text-[10px] font-mono text-gray-400 w-6">
+                        {idx + 1}.
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            'text-[10px] font-medium px-1.5 py-0.5 rounded',
+                            trace.severity === 'error' ? 'bg-red-100 text-red-700' :
+                            trace.severity === 'warning' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'
+                          )}>
+                            {trace.step}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-mono">
+                            {formatTime(trace.timestamp)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-0.5">{trace.message}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {record.logSnapshot && record.logSnapshot.length > 0 && (
             <div>
               <button
@@ -219,6 +363,7 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
                     return (
                       <div
                         key={idx}
+                        data-testid="log-snapshot-item"
                         className="flex items-start gap-2 px-3 py-2 border-b border-gray-100 last:border-0"
                       >
                         <span className="flex-shrink-0 text-[10px] font-mono text-gray-400 w-6">
@@ -240,6 +385,13 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {record.status === 'failed' && record.errorMessage && (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+              <p className="text-sm font-medium text-red-900 mb-1">错误信息</p>
+              <p className="text-xs text-red-700">{record.errorMessage}</p>
             </div>
           )}
 
@@ -292,6 +444,7 @@ export default function Logs() {
     clearExportError,
     getLastSuccessfulExport,
     loadPersistedData,
+    canTriggerExport,
   } = useExportStore()
 
   const [filter, setFilter] = useState<EventAction | 'all'>('all')
@@ -358,9 +511,52 @@ export default function Logs() {
       }))
   }
 
+  const getPageContext = (): ExportRecord['pageContext'] => {
+    return {
+      route: window.location.pathname,
+      viewMode: paramTaskId ? 'single-task' : 'all',
+      currentTaskId: paramTaskId || undefined,
+      timestamp: Date.now(),
+      userAgent: navigator.userAgent,
+      screenSize: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+    }
+  }
+
+  const getKeyFieldsSnapshot = (): ExportRecord['keyFieldsSnapshot'] => {
+    return {
+      totalTaskCount: tasks.length,
+      inProgressCount: tasks.filter((t) => t.status === 'in_progress').length,
+      completedCount: tasks.filter((t) => t.status === 'approved' || t.status === 'submitted').length,
+      logCount: eventLogs.length,
+      anomalyCount: 0,
+      draftCount: 0,
+    }
+  }
+
+  const getSortInfo = (): ExportRecord['sortInfo'] => {
+    const sortedLogs = [...filteredLogs].sort((a, b) => b.timestamp - a.timestamp)
+    return {
+      sortBy: 'timestamp',
+      sortOrder: 'desc',
+      visibleRange: {
+        start: 0,
+        end: Math.min(sortedLogs.length, 50),
+        total: sortedLogs.length,
+      },
+    }
+  }
+
   const handleExportClick = async () => {
     if (isExporting) {
       addToast('正在导出中，请稍候...', 'warning')
+      return
+    }
+
+    if (!canTriggerExport()) {
+      addToast('操作过于频繁，请稍候再试', 'warning')
       return
     }
 
@@ -391,13 +587,19 @@ export default function Logs() {
 
       const taskSnapshot = getCurrentTaskSnapshot()
       const logSnapshot = getCurrentLogSnapshot()
+      const pageContext = getPageContext()
+      const keyFieldsSnapshot = getKeyFieldsSnapshot()
+      const sortInfo = getSortInfo()
 
       const exportId = await createExportRecord(
         exportFilter,
         selectedTypes,
         role === 'admin' ? '管理员' : '巡检员',
         taskSnapshot,
-        logSnapshot
+        logSnapshot,
+        pageContext,
+        keyFieldsSnapshot,
+        sortInfo
       )
 
       if (!exportId) {
@@ -422,10 +624,11 @@ export default function Logs() {
   }
 
   const handleViewReview = (record: ExportRecord) => {
-    setReviewRecord(record)
+    setReviewRecord(normalizeExportRecord(record))
   }
 
   const persistedLastExport = getLastSuccessfulExport()
+  const normalizedLastExport = persistedLastExport ? normalizeExportRecord(persistedLastExport) : null
 
   return (
     <Layout
@@ -502,22 +705,22 @@ export default function Logs() {
         </div>
       )}
 
-      {persistedLastExport && (
+      {normalizedLastExport && (
         <div className="sticky top-0 z-20 bg-green-50 border-b border-green-200 px-4 py-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
               <div className="min-w-0">
                 <p className="text-sm font-medium text-green-800 truncate">
-                  最近成功导出：{persistedLastExport.fileSummary?.fileName || '已完成'}
+                  最近成功导出：{normalizedLastExport.fileSummary?.fileName || '已完成'}
                 </p>
                 <p className="text-xs text-green-600">
-                  {formatTime(persistedLastExport.triggeredAt)} · {persistedLastExport.fileSummary ? formatFileSize(persistedLastExport.fileSummary.fileSize) : ''}
+                  {formatTime(normalizedLastExport.triggeredAt)} · {normalizedLastExport.fileSummary ? formatFileSize(normalizedLastExport.fileSummary.fileSize) : ''}
                 </p>
               </div>
             </div>
             <button
-              onClick={() => handleViewReview(persistedLastExport)}
+              onClick={() => handleViewReview(normalizedLastExport)}
               className="flex-shrink-0 flex items-center gap-1 text-xs text-green-700 bg-green-100 px-2 py-1 rounded hover:bg-green-200"
             >
               <Eye className="h-3.5 w-3.5" />
@@ -569,7 +772,7 @@ export default function Logs() {
               {exportRecords.map((record) => (
                 <ExportRecordCard
                   key={record.id}
-                  record={record}
+                  record={normalizeExportRecord(record)}
                   onView={handleViewReview}
                 />
               ))}

@@ -307,7 +307,7 @@ test.describe('导出记录完整链路（真实 DOM 交互 + 持久化验证）
     await expect(fileSummarySection.getByText('包含数据'), '文件摘要应包含包含数据').toBeVisible()
 
     // 验证日志顺序快照（展开的）
-    const logSnapshotItems = page.locator('div.flex.items-start.gap-2.px-3.py-2')
+    const logSnapshotItems = page.locator('[data-testid="log-snapshot-item"]')
     const logSnapshotCount = await logSnapshotItems.count()
     expect(logSnapshotCount, '日志顺序快照应包含日志记录').toBeGreaterThanOrEqual(6)
 

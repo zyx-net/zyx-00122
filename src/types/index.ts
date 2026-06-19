@@ -117,4 +117,40 @@ export interface ExportRecord {
     detail: string
     timestamp: number
   }> | null
+  pageContext?: {
+    route: string
+    viewMode: 'all' | 'single-task'
+    currentTaskId?: string
+    timestamp: number
+    userAgent: string
+    screenSize: {
+      width: number
+      height: number
+    }
+  } | null
+  keyFieldsSnapshot?: {
+    totalTaskCount: number
+    inProgressCount: number
+    completedCount: number
+    logCount: number
+    anomalyCount: number
+    draftCount: number
+  } | null
+  sortInfo?: {
+    sortBy: 'timestamp' | 'action' | 'taskId'
+    sortOrder: 'asc' | 'desc'
+    visibleRange: {
+      start: number
+      end: number
+      total: number
+    }
+  } | null
+  failureTrace?: Array<{
+    timestamp: number
+    step: string
+    message: string
+    severity: 'info' | 'warning' | 'error'
+  }> | null
+  appVersion?: string
+  completedAt?: number
 }

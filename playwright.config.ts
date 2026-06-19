@@ -10,7 +10,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: '**/export-round5.spec.ts',
+  testMatch: ['**/export-round5.spec.ts', '**/export-snapshot-regression.spec.ts'],
   fullyParallel: false,
   retries: 0,
   reporter: 'line',

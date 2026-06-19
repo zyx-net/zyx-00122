@@ -5,6 +5,7 @@ import Layout from '@/components/Layout'
 import { db } from '@/db'
 import { useAppStore } from '@/stores/useAppStore'
 import { useExportStore } from '@/stores/useExportStore'
+import type { ExportRecord } from '@/types'
 import { cn } from '@/lib/utils'
 
 interface LocationState {
@@ -25,6 +26,7 @@ export default function Export() {
 
   const {
     updateExportStatus,
+    appendFailureTrace,
     setExportError,
     clearExportError,
     exportError,
@@ -107,6 +109,17 @@ export default function Export() {
     navigate(-1)
   }
 
+  const addTrace = async (step: string, message: string, severity: 'info' | 'warning' | 'error' = 'info') => {
+    if (activeExportId) {
+      await appendFailureTrace(activeExportId, {
+        timestamp: Date.now(),
+        step,
+        message,
+        severity,
+      })
+    }
+  }
+
   const handleExport = async () => {
     const keys = Object.keys(selected).filter((k) => selected[k])
     if (keys.length === 0) {
@@ -126,7 +139,17 @@ export default function Export() {
     setPageError(null)
     clearExportError()
 
+    const failureTrace: Exclude<ExportRecord['failureTrace'], null | undefined> = []
+
     try {
+      failureTrace.push({
+        timestamp: Date.now(),
+        step: 'init',
+        message: `开始导出，选择了 ${keys.length} 种数据类型`,
+        severity: 'info',
+      })
+      await addTrace('init', `开始导出，选择了 ${keys.length} 种数据类型`)
+
       const exportData: Record<string, unknown> = {
         exportedAt: Date.now(),
         exportedBy: role === 'admin' ? '管理员' : '巡检员',
@@ -136,6 +159,14 @@ export default function Export() {
       let recordCount = 0
 
       for (const key of keys) {
+        failureTrace.push({
+          timestamp: Date.now(),
+          step: `fetch_${key}`,
+          message: `正在获取 ${key} 数据...`,
+          severity: 'info',
+        })
+        await addTrace(`fetch_${key}`, `正在获取 ${key} 数据...`)
+
         let data: unknown[] = []
         if (key === 'templates') {
           data = await db.templates.toArray()
@@ -157,13 +188,38 @@ export default function Export() {
           exportData[key] = data
         }
         recordCount += data.length
+
+        failureTrace.push({
+          timestamp: Date.now(),
+          step: `fetch_${key}`,
+          message: `获取 ${key} 数据完成，共 ${data.length} 条`,
+          severity: 'info',
+        })
+        await addTrace(`fetch_${key}`, `获取 ${key} 数据完成，共 ${data.length} 条`)
       }
+
+      failureTrace.push({
+        timestamp: Date.now(),
+        step: 'serialize',
+        message: '正在序列化 JSON 数据...',
+        severity: 'info',
+      })
+      await addTrace('serialize', '正在序列化 JSON 数据...')
 
       const jsonStr = JSON.stringify(exportData, null, 2)
       const blob = new Blob([jsonStr], { type: 'application/json' })
       const fileSize = blob.size
       const url = URL.createObjectURL(blob)
       const fileName = `inspection-export-${new Date().toISOString().slice(0, 10)}-${Date.now()}.json`
+
+      failureTrace.push({
+        timestamp: Date.now(),
+        step: 'download',
+        message: `准备下载文件 ${fileName} (${fileSize} bytes)`,
+        severity: 'info',
+      })
+      await addTrace('download', `准备下载文件 ${fileName} (${fileSize} bytes)`)
+
       const a = document.createElement('a')
       a.href = url
       a.download = fileName
@@ -179,7 +235,14 @@ export default function Export() {
           recordCount,
           dataTypes: keys,
         }
-        await updateExportStatus(activeExportId, 'success', fileSummary)
+        failureTrace.push({
+          timestamp: Date.now(),
+          step: 'complete',
+          message: `导出成功，共 ${recordCount} 条记录`,
+          severity: 'info',
+        })
+        await addTrace('complete', `导出成功，共 ${recordCount} 条记录`)
+        await updateExportStatus(activeExportId, 'success', fileSummary, undefined, failureTrace)
       }
 
       setLastExportTime(Date.now())
@@ -188,8 +251,16 @@ export default function Export() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '导出过程中发生未知错误'
 
+      failureTrace.push({
+        timestamp: Date.now(),
+        step: 'error',
+        message: errorMsg,
+        severity: 'error',
+      })
+
       if (activeExportId) {
-        await updateExportStatus(activeExportId, 'failed', undefined, errorMsg)
+        await addTrace('error', errorMsg, 'error')
+        await updateExportStatus(activeExportId, 'failed', undefined, errorMsg, failureTrace)
       }
 
       setPageError(errorMsg)
