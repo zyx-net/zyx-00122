@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Filter, FileJson, History, X, CheckCircle, AlertCircle, Clock, FileText, Eye, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  Filter, FileJson, History, X, CheckCircle, AlertCircle, Clock, FileText, Eye,
+  ChevronDown, ChevronUp, Upload, Copy, Link2, GitCompare, ArrowDownToLine, AlertTriangle,
+} from 'lucide-react'
 import Layout from '@/components/Layout'
 import EmptyState from '@/components/EmptyState'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { useExportStore, normalizeExportRecord } from '@/stores/useExportStore'
-import type { EventAction, ExportRecord } from '@/types'
+import type { EventAction, ExportRecord, TaskStateSnapshot, TriggerSource } from '@/types'
 import { cn } from '@/lib/utils'
 
 function formatTime(ts: number) {
@@ -50,10 +53,19 @@ const actionOptions: { value: EventAction | 'all'; label: string }[] = [
   { value: 'reject', label: '拒绝' },
 ]
 
-const statusConfig: Record<string, { label: string; color: string; icon: typeof CheckCircle }> = {
-  pending: { label: '导出中', color: 'text-blue-600', icon: Clock },
-  success: { label: '成功', color: 'text-green-600', icon: CheckCircle },
-  failed: { label: '失败', color: 'text-red-600', icon: AlertCircle },
+const statusConfig: Record<string, { label: string; color: string; icon: typeof CheckCircle; bg: string }> = {
+  pending: { label: '导出中', color: 'text-blue-600', icon: Clock, bg: 'bg-blue-50' },
+  success: { label: '成功', color: 'text-green-600', icon: CheckCircle, bg: 'bg-green-50' },
+  failed: { label: '失败', color: 'text-red-600', icon: AlertCircle, bg: 'bg-red-50' },
+  interrupted: { label: '已中断', color: 'text-amber-600', icon: AlertTriangle, bg: 'bg-amber-50' },
+}
+
+const triggerSourceLabels: Record<TriggerSource, string> = {
+  'logs-toolbar': '日志页工具栏',
+  'task-detail': '任务详情页',
+  'admin-review': '审核页面',
+  'batch-action': '批量操作',
+  'unknown': '未知入口',
 }
 
 const dataTypeLabels: Record<string, string> = {
@@ -63,6 +75,14 @@ const dataTypeLabels: Record<string, string> = {
   submissions: '提交记录',
   anomalies: '异常记录',
   eventLogs: '事件日志',
+}
+
+const taskStatusLabels: Record<string, string> = {
+  available: '待领取',
+  in_progress: '进行中',
+  submitted: '已提交',
+  rework: '待返工',
+  approved: '已通过',
 }
 
 function ExportRecordCard({ record, onView }: { record: ExportRecord; onView: (r: ExportRecord) => void }) {
@@ -81,18 +101,43 @@ function ExportRecordCard({ record, onView }: { record: ExportRecord; onView: (r
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3 mb-2">
+    <div
+      data-testid="export-record-card"
+      className={cn(
+        'rounded-lg border border-gray-200 p-3 mb-2',
+        record.status === 'pending' && 'bg-blue-50',
+        record.status === 'success' && 'bg-white',
+        record.status === 'failed' && 'bg-white',
+        record.status === 'interrupted' && 'bg-white'
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <StatusIcon className={cn('h-4 w-4 flex-shrink-0', status.color)} />
             <span className={cn('text-xs font-medium', status.color)}>{status.label}</span>
             <span className="text-xs text-gray-400 font-mono">
               {formatTime(record.triggeredAt)}
             </span>
+            {record.isDuplicateContent && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                <Copy className="h-2.5 w-2.5" />
+                内容重复
+              </span>
+            )}
+            {record.importInfo && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded">
+                <ArrowDownToLine className="h-2.5 w-2.5" />
+                已导入
+              </span>
+            )}
           </div>
           <p className="text-xs text-gray-600 mb-1">
             <span className="text-gray-500">导出人：</span>{record.exportedBy}
+          </p>
+          <p className="text-xs text-gray-600 mb-1">
+            <span className="text-gray-500">触发入口：</span>
+            {triggerSourceLabels[record.triggerSource || 'unknown'] || record.triggerSource}
           </p>
           <p className="text-xs text-gray-600 mb-1">
             <span className="text-gray-500">筛选条件：</span>{getFilterDesc()}
@@ -118,11 +163,19 @@ function ExportRecordCard({ record, onView }: { record: ExportRecord; onView: (r
               错误：{record.errorMessage}
             </p>
           )}
+          {record.status === 'interrupted' && record.errorMessage && (
+            <p className="mt-2 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
+              {record.errorMessage}
+            </p>
+          )}
         </div>
-        {(record.status === 'success' || record.logSnapshot || record.failureTrace || record.pageContext || record.keyFieldsSnapshot) && (
+        {(record.status === 'success' || record.status === 'failed' || record.status === 'interrupted' ||
+          record.logSnapshot || record.failureTrace || record.pageContext || record.keyFieldsSnapshot ||
+          record.importInfo || record.fieldDifferences) && (
           <button
             onClick={() => onView(record)}
             className="flex-shrink-0 flex items-center gap-1 text-xs text-primary hover:text-primary/80"
+            data-testid="review-button"
           >
             <Eye className="h-3.5 w-3.5" />
             复核
@@ -133,16 +186,110 @@ function ExportRecordCard({ record, onView }: { record: ExportRecord; onView: (r
   )
 }
 
+function FieldDiffView({ record }: { record: ExportRecord }) {
+  const [expanded, setExpanded] = useState(true)
+  const hasDiffs = record.fieldDifferences && record.fieldDifferences.length > 0
+
+  if (!hasDiffs && !record.tasksBeforeExport) return null
+
+  const changedDiffs = record.fieldDifferences?.filter(d => d.changed) || []
+  const hasChanges = changedDiffs.length > 0
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className={cn(
+          'w-full flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium',
+          hasChanges
+            ? 'bg-rose-100 text-rose-700 hover:bg-rose-200'
+            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+        )}
+      >
+        <span className="flex items-center gap-1.5">
+          <GitCompare className="h-4 w-4" />
+          任务状态差异
+          {hasChanges && (
+            <span className="bg-rose-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+              {changedDiffs.length} 项变更
+            </span>
+          )}
+          {!hasChanges && record.tasksBeforeExport && (
+            <span className="bg-gray-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+              无变更
+            </span>
+          )}
+        </span>
+        {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
+      {expanded && (
+        <div className="mt-2 rounded-lg border border-gray-200 max-h-64 overflow-y-auto">
+          {hasChanges ? (
+            changedDiffs.map((diff, idx) => (
+              <div
+                key={idx}
+                className="flex items-start gap-2 px-3 py-2 border-b border-gray-100 last:border-0"
+              >
+                <span className="flex-shrink-0 text-[10px] font-mono text-gray-400 w-6">
+                  {idx + 1}.
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-900">{diff.field}</p>
+                  <div className="flex items-center gap-2 mt-0.5 text-xs">
+                    <span className="text-gray-500">
+                      前：<span className="text-gray-700">{String(diff.before ?? '—')}</span>
+                    </span>
+                    <span className="text-gray-300">→</span>
+                    <span className="text-rose-600 font-medium">
+                      后：{String(diff.after ?? '—')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="px-3 py-4 text-center text-xs text-gray-500">
+              导出期间任务状态无变化
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () => void }) {
   const [expanded, setExpanded] = useState(true)
   const [failureExpanded, setFailureExpanded] = useState(true)
   const hasFailureTrace = record.failureTrace && record.failureTrace.length > 0
+  const addToast = useAppStore((s) => s.addToast)
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(
+      () => addToast(`${label}已复制到剪贴板`, 'success'),
+      () => addToast(`复制${label}失败`, 'error')
+    )
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" data-testid="review-modal">
       <div className="w-full max-w-lg max-h-[85vh] overflow-y-auto bg-white rounded-xl shadow-xl">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">导出记录复核</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-semibold text-gray-900">导出记录复核</h3>
+            {record.isDuplicateContent && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                <Copy className="h-3 w-3" />
+                内容与之前导出相同
+              </span>
+            )}
+            {record.importInfo && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                <ArrowDownToLine className="h-3 w-3" />
+                外部导入
+              </span>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"
@@ -167,7 +314,8 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
                 <span className={cn(
                   'font-medium',
                   record.status === 'success' ? 'text-green-600' :
-                  record.status === 'failed' ? 'text-red-600' : 'text-blue-600'
+                  record.status === 'failed' ? 'text-red-600' :
+                  record.status === 'interrupted' ? 'text-amber-600' : 'text-blue-600'
                 )}>
                   {statusConfig[record.status]?.label || record.status}
                 </span>
@@ -190,12 +338,86 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
                   <span className="text-gray-900">{formatTime(record.completedAt)}</span>
                 </div>
               )}
+              <div>
+                <span className="text-gray-500">触发入口：</span>
+                <span className="text-gray-900">
+                  {triggerSourceLabels[record.triggerSource || 'unknown'] || record.triggerSource}
+                </span>
+              </div>
+              {record.contentHash && (
+                <div className="col-span-2 flex items-center gap-1">
+                  <span className="text-gray-500">内容指纹：</span>
+                  <span className="text-gray-900 font-mono text-[10px] truncate max-w-[160px]">
+                    {record.contentHash}
+                  </span>
+                  <button
+                    onClick={() => copyToClipboard(record.contentHash!, '内容指纹')}
+                    className="text-gray-400 hover:text-gray-600"
+                    title="复制"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+              {record.id && (
+                <div className="col-span-2 flex items-center gap-1">
+                  <span className="text-gray-500">记录ID：</span>
+                  <span className="text-gray-900 font-mono text-[10px] truncate max-w-[180px]">
+                    {record.id}
+                  </span>
+                  <button
+                    onClick={() => copyToClipboard(record.id, '记录ID')}
+                    className="text-gray-400 hover:text-gray-600"
+                    title="复制"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
+          {record.importInfo && (
+            <div className="rounded-lg bg-purple-50 border border-purple-200 p-3">
+              <p className="text-sm font-medium text-purple-900 mb-2 flex items-center gap-1.5">
+                <ArrowDownToLine className="h-4 w-4" />
+                导入信息
+              </p>
+              <div className="space-y-1.5 text-xs">
+                <div>
+                  <span className="text-purple-500">导入时间：</span>
+                  <span className="text-purple-900">{formatTime(record.importInfo.importedAt)}</span>
+                </div>
+                <div>
+                  <span className="text-purple-500">来源文件：</span>
+                  <span className="text-purple-900 font-mono">{record.importInfo.sourceFileName}</span>
+                </div>
+                {record.importInfo.originalAppVersion && (
+                  <div>
+                    <span className="text-purple-500">原始版本：</span>
+                    <span className="text-purple-900 font-mono">{record.importInfo.originalAppVersion}</span>
+                  </div>
+                )}
+                {record.importInfo.compatibilityNotes && record.importInfo.compatibilityNotes.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-purple-200">
+                    <p className="text-purple-500 mb-1">兼容说明：</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {record.importInfo.compatibilityNotes.map((note, i) => (
+                        <li key={i} className="text-purple-700">{note}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {record.pageContext && (
             <div className="rounded-lg bg-purple-50 border border-purple-100 p-3">
-              <p className="text-sm font-medium text-purple-900 mb-2">页面上下文快照</p>
+              <p className="text-sm font-medium text-purple-900 mb-2 flex items-center gap-1.5">
+                <Link2 className="h-4 w-4" />
+                页面上下文快照
+              </p>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
                   <span className="text-purple-500">路由：</span>
@@ -213,6 +435,14 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
                   <div>
                     <span className="text-purple-500">任务ID：</span>
                     <span className="text-purple-900 font-mono">{record.pageContext.currentTaskId.slice(-8)}</span>
+                  </div>
+                )}
+                {record.pageContext.scrollPosition && (
+                  <div>
+                    <span className="text-purple-500">滚动位置：</span>
+                    <span className="text-purple-900 font-mono">
+                      {record.pageContext.scrollPosition.x},{record.pageContext.scrollPosition.y}
+                    </span>
                   </div>
                 )}
               </div>
@@ -266,7 +496,7 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
                   <span className="text-cyan-500">排序方向：</span>
                   <span className="text-cyan-900">{record.sortInfo.sortOrder === 'desc' ? '倒序' : '正序'}</span>
                 </div>
-                <div>
+                <div className="col-span-2">
                   <span className="text-cyan-500">可见范围：</span>
                   <span className="text-cyan-900 font-mono">
                     {record.sortInfo.visibleRange.start + 1}-{record.sortInfo.visibleRange.end}
@@ -287,7 +517,7 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
                 </div>
                 <div>
                   <span className="text-blue-500">当前状态：</span>
-                  <span className="text-blue-900 font-medium">{record.taskSnapshot.status}</span>
+                  <span className="text-blue-900 font-medium">{taskStatusLabels[record.taskSnapshot.status] || record.taskSnapshot.status}</span>
                 </div>
                 <div>
                   <span className="text-blue-500">指派人：</span>
@@ -301,17 +531,28 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
             </div>
           )}
 
+          <FieldDiffView record={record} />
+
           {hasFailureTrace && (
             <div>
               <button
                 onClick={() => setFailureExpanded(!failureExpanded)}
-                className="w-full flex items-center justify-between rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-200"
+                className={cn(
+                  'w-full flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium',
+                  record.status === 'failed'
+                    ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                    : record.status === 'interrupted'
+                    ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                )}
               >
-                <span>失败追踪日志（{record.failureTrace!.length} 条）</span>
+                <span data-testid="failure-trace-title">
+                  失败追踪日志（{record.failureTrace!.length} 条）
+                </span>
                 {failureExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </button>
               {failureExpanded && (
-                <div className="mt-2 rounded-lg border border-red-200 max-h-48 overflow-y-auto">
+                <div className="mt-2 rounded-lg border border-gray-200 max-h-48 overflow-y-auto">
                   {record.failureTrace!.map((trace, idx) => (
                     <div
                       key={idx}
@@ -395,6 +636,13 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
             </div>
           )}
 
+          {record.status === 'interrupted' && record.errorMessage && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
+              <p className="text-sm font-medium text-amber-900 mb-1">中断信息</p>
+              <p className="text-xs text-amber-700">{record.errorMessage}</p>
+            </div>
+          )}
+
           {record.fileSummary && (
             <div className="rounded-lg bg-green-50 border border-green-100 p-3">
               <p className="text-sm font-medium text-green-900 mb-2">文件摘要</p>
@@ -417,6 +665,14 @@ function ReviewModal({ record, onClose }: { record: ExportRecord; onClose: () =>
                     {record.fileSummary.dataTypes.map((t) => dataTypeLabels[t] || t).join('、')}
                   </span>
                 </p>
+                {record.fileSummary.contentHash && (
+                  <p className="flex items-center gap-1">
+                    <span className="text-green-600">内容指纹：</span>
+                    <span className="text-green-900 font-mono text-[10px]">
+                      {record.fileSummary.contentHash}
+                    </span>
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -445,6 +701,7 @@ export default function Logs() {
     getLastSuccessfulExport,
     loadPersistedData,
     canTriggerExport,
+    importExportRecord,
   } = useExportStore()
 
   const [filter, setFilter] = useState<EventAction | 'all'>('all')
@@ -452,6 +709,8 @@ export default function Logs() {
   const [exportButtonDisabled, setExportButtonDisabled] = useState(false)
   const [reviewRecord, setReviewRecord] = useState<ExportRecord | null>(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchTasks()
@@ -497,6 +756,16 @@ export default function Logs() {
     }
   }
 
+  const getTasksBeforeExport = (): TaskStateSnapshot[] => {
+    return tasks.map(t => ({
+      taskId: t.id,
+      title: t.title,
+      status: t.status,
+      assignee: t.assignee,
+      updatedAt: t.updatedAt,
+    }))
+  }
+
   const getCurrentLogSnapshot = () => {
     const targetLogs = paramTaskId
       ? eventLogs.filter((l) => l.taskId === paramTaskId)
@@ -512,6 +781,10 @@ export default function Logs() {
   }
 
   const getPageContext = (): ExportRecord['pageContext'] => {
+    const urlParams: Record<string, string> = {}
+    const sp = new URLSearchParams(window.location.search)
+    sp.forEach((v, k) => { urlParams[k] = v })
+
     return {
       route: window.location.pathname,
       viewMode: paramTaskId ? 'single-task' : 'all',
@@ -522,6 +795,11 @@ export default function Logs() {
         width: window.innerWidth,
         height: window.innerHeight,
       },
+      scrollPosition: {
+        x: window.scrollX,
+        y: window.scrollY,
+      },
+      urlParams: Object.keys(urlParams).length > 0 ? urlParams : undefined,
     }
   }
 
@@ -590,16 +868,23 @@ export default function Logs() {
       const pageContext = getPageContext()
       const keyFieldsSnapshot = getKeyFieldsSnapshot()
       const sortInfo = getSortInfo()
+      const tasksBeforeExport = getTasksBeforeExport()
+
+      const triggerSource: TriggerSource = paramTaskId ? 'task-detail' : 'logs-toolbar'
 
       const exportId = await createExportRecord(
         exportFilter,
         selectedTypes,
         role === 'admin' ? '管理员' : '巡检员',
-        taskSnapshot,
-        logSnapshot,
-        pageContext,
-        keyFieldsSnapshot,
-        sortInfo
+        {
+          taskSnapshot,
+          logSnapshot,
+          pageContext,
+          keyFieldsSnapshot,
+          sortInfo,
+          triggerSource,
+          tasksBeforeExport,
+        }
       )
 
       if (!exportId) {
@@ -625,6 +910,38 @@ export default function Logs() {
 
   const handleViewReview = (record: ExportRecord) => {
     setReviewRecord(normalizeExportRecord(record))
+  }
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsImporting(true)
+    try {
+      const text = await file.text()
+      let data: unknown
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error('文件格式错误，应为合法的 JSON 文件')
+      }
+
+      const imported = await importExportRecord(data, file.name)
+      addToast(`导入成功：${imported.fileSummary?.fileName || file.name}`, 'success')
+      handleViewReview(imported)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '导入失败'
+      addToast(`导入失败：${errorMsg}`, 'error')
+    } finally {
+      setIsImporting(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
   }
 
   const persistedLastExport = getLastSuccessfulExport()
@@ -654,6 +971,18 @@ export default function Logs() {
               <FileJson className={cn('h-5 w-5', isExporting ? 'animate-pulse' : '')} />
             </button>
             <button
+              onClick={handleImportClick}
+              disabled={isImporting}
+              className={cn(
+                'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+                isImporting ? 'bg-white/20 cursor-not-allowed' : 'hover:bg-white/10 active:bg-white/20'
+              )}
+              title="导入旧导出记录"
+              data-testid="import-button"
+            >
+              <Upload className={cn('h-5 w-5', isImporting ? 'animate-pulse' : '')} />
+            </button>
+            <button
               onClick={() => setShowExportHistory(!showExportHistory)}
               className={cn(
                 'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
@@ -672,6 +1001,13 @@ export default function Logs() {
             >
               <Filter className="h-5 w-5" />
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
           </div>
         ) : null
       }
@@ -713,6 +1049,12 @@ export default function Logs() {
               <div className="min-w-0">
                 <p className="text-sm font-medium text-green-800 truncate">
                   最近成功导出：{normalizedLastExport.fileSummary?.fileName || '已完成'}
+                  {normalizedLastExport.isDuplicateContent && (
+                    <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                      <Copy className="h-2.5 w-2.5" />
+                      内容重复
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-green-600">
                   {formatTime(normalizedLastExport.triggeredAt)} · {normalizedLastExport.fileSummary ? formatFileSize(normalizedLastExport.fileSummary.fileSize) : ''}
@@ -756,16 +1098,32 @@ export default function Logs() {
         <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-900">导出历史记录</h3>
-            <button
-              onClick={() => setShowExportHistory(false)}
-              className="text-xs text-gray-500 hover:text-gray-700"
-            >
-              收起
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleImportClick}
+                disabled={isImporting}
+                className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 disabled:opacity-50"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                {isImporting ? '导入中...' : '导入旧记录'}
+              </button>
+              <button
+                onClick={() => setShowExportHistory(false)}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                收起
+              </button>
+            </div>
           </div>
           {exportRecords.length === 0 ? (
             <div className="py-8 text-center">
               <p className="text-sm text-gray-500">暂无导出记录</p>
+              <button
+                onClick={handleImportClick}
+                className="mt-2 text-xs text-primary hover:underline"
+              >
+                导入旧的导出文件
+              </button>
             </div>
           ) : (
             <div className="max-h-80 overflow-y-auto">

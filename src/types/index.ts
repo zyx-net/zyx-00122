@@ -83,13 +83,30 @@ export interface EventLog {
 
 export type UserRole = 'inspector' | 'admin'
 
-export type ExportStatus = 'pending' | 'success' | 'failed'
+export type ExportStatus = 'pending' | 'success' | 'failed' | 'interrupted'
+
+export type TriggerSource = 'logs-toolbar' | 'task-detail' | 'admin-review' | 'batch-action' | 'unknown'
 
 export interface ExportFilter {
   action?: EventAction
   taskId?: string
   from?: number
   to?: number
+}
+
+export interface TaskStateSnapshot {
+  taskId: string
+  title: string
+  status: TaskStatus
+  assignee: string
+  updatedAt: number
+}
+
+export interface FieldDifference {
+  field: string
+  before: unknown
+  after: unknown
+  changed: boolean
 }
 
 export interface ExportRecord {
@@ -102,16 +119,24 @@ export interface ExportRecord {
     fileSize: number
     recordCount: number
     dataTypes: string[]
+    contentHash?: string
   } | null
   status: ExportStatus
   errorMessage?: string
   exportedBy: string
+  triggerSource?: TriggerSource
+  contentHash?: string
+  isDuplicateContent?: boolean
+  duplicateOfExportId?: string
   taskSnapshot?: {
     taskId: string
     status: TaskStatus
     title: string
     assignee: string
   } | null
+  tasksBeforeExport?: TaskStateSnapshot[] | null
+  tasksAfterExport?: TaskStateSnapshot[] | null
+  fieldDifferences?: FieldDifference[] | null
   logSnapshot?: Array<{
     action: EventAction
     detail: string
@@ -127,6 +152,11 @@ export interface ExportRecord {
       width: number
       height: number
     }
+    scrollPosition?: {
+      x: number
+      y: number
+    }
+    urlParams?: Record<string, string>
   } | null
   keyFieldsSnapshot?: {
     totalTaskCount: number
@@ -151,6 +181,12 @@ export interface ExportRecord {
     message: string
     severity: 'info' | 'warning' | 'error'
   }> | null
+  importInfo?: {
+    importedAt: number
+    sourceFileName: string
+    originalAppVersion?: string
+    compatibilityNotes?: string[]
+  } | null
   appVersion?: string
   completedAt?: number
 }

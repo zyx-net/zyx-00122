@@ -5,7 +5,7 @@ import Layout from '@/components/Layout'
 import { db } from '@/db'
 import { useAppStore } from '@/stores/useAppStore'
 import { useExportStore } from '@/stores/useExportStore'
-import type { ExportRecord } from '@/types'
+import type { ExportRecord, TaskStateSnapshot } from '@/types'
 import { cn } from '@/lib/utils'
 
 interface LocationState {
@@ -26,6 +26,7 @@ export default function Export() {
 
   const {
     updateExportStatus,
+    finalizeExport,
     appendFailureTrace,
     setExportError,
     clearExportError,
@@ -120,6 +121,17 @@ export default function Export() {
     }
   }
 
+  const captureTaskStates = async (): Promise<TaskStateSnapshot[]> => {
+    const tasks = await db.tasks.toArray()
+    return tasks.map(t => ({
+      taskId: t.id,
+      title: t.title,
+      status: t.status,
+      assignee: t.assignee,
+      updatedAt: t.updatedAt,
+    }))
+  }
+
   const handleExport = async () => {
     const keys = Object.keys(selected).filter((k) => selected[k])
     if (keys.length === 0) {
@@ -140,6 +152,7 @@ export default function Export() {
     clearExportError()
 
     const failureTrace: Exclude<ExportRecord['failureTrace'], null | undefined> = []
+    let tasksAfterExport: TaskStateSnapshot[] | undefined
 
     try {
       failureTrace.push({
@@ -228,6 +241,8 @@ export default function Export() {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
 
+      tasksAfterExport = await captureTaskStates()
+
       if (activeExportId) {
         const fileSummary = {
           fileName,
@@ -242,7 +257,13 @@ export default function Export() {
           severity: 'info',
         })
         await addTrace('complete', `导出成功，共 ${recordCount} 条记录`)
-        await updateExportStatus(activeExportId, 'success', fileSummary, undefined, failureTrace)
+        await finalizeExport(activeExportId, {
+          status: 'success',
+          fileSummary,
+          failureTrace,
+          exportedData: exportData,
+          tasksAfterExport,
+        })
       }
 
       setLastExportTime(Date.now())
@@ -258,9 +279,16 @@ export default function Export() {
         severity: 'error',
       })
 
+      tasksAfterExport = await captureTaskStates().catch(() => undefined)
+
       if (activeExportId) {
         await addTrace('error', errorMsg, 'error')
-        await updateExportStatus(activeExportId, 'failed', undefined, errorMsg, failureTrace)
+        await finalizeExport(activeExportId, {
+          status: 'failed',
+          errorMessage: errorMsg,
+          failureTrace,
+          tasksAfterExport,
+        })
       }
 
       setPageError(errorMsg)
