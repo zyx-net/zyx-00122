@@ -10,6 +10,7 @@ import Review from "@/pages/admin/Review";
 import ReviewDetail from "@/pages/admin/ReviewDetail";
 import Logs from "@/pages/Logs";
 import Export from "@/pages/Export";
+import ImportCenter from "@/pages/ImportCenter";
 import Toast from "@/components/Toast";
 import { seedDatabase } from "@/db";
 
@@ -33,6 +34,9 @@ function AppContent() {
         <Route path="/admin/logs" element={<Logs />} />
         <Route path="/logs/:taskId?" element={<Logs />} />
         <Route path="/export" element={<Export />} />
+        <Route path="/import-center" element={<ImportCenter />} />
+        <Route path="/admin/import-center" element={<ImportCenter />} />
+        <Route path="/inspector/import-center" element={<ImportCenter />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Toast />

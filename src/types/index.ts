@@ -83,6 +83,141 @@ export interface EventLog {
 
 export type UserRole = 'inspector' | 'admin'
 
+export type ImportTargetEntity = 'tasks' | 'templates' | 'anomalies' | 'eventLogs' | 'submissions' | 'drafts'
+
+export type ImportBatchStatus =
+  | 'previewing'
+  | 'previewed'
+  | 'pending_confirmation'
+  | 'importing'
+  | 'success'
+  | 'failed'
+  | 'partial_success'
+  | 'rolled_back'
+  | 'rolling_back'
+  | 'interrupted'
+
+export type ImportConflictAction = 'skip' | 'overwrite' | 'pending'
+
+export type ImportIssueType =
+  | 'missing_required_field'
+  | 'invalid_type'
+  | 'duplicate_key'
+  | 'will_overwrite'
+  | 'dirty_data'
+  | 'unknown_field'
+  | 'value_out_of_range'
+  | 'reference_not_found'
+
+export type ImportIssueSeverity = 'error' | 'warning' | 'info'
+
+export interface ImportIssue {
+  type: ImportIssueType
+  field: string
+  message: string
+  severity: ImportIssueSeverity
+  value?: unknown
+}
+
+export interface ImportFieldMapping {
+  sourceField: string
+  targetField: string
+  confidence: number
+  isAutoMapped: boolean
+}
+
+export interface ImportPreviewRecord {
+  index: number
+  sourceData: Record<string, unknown>
+  mappedData: Record<string, unknown>
+  issues: ImportIssue[]
+  status: 'valid' | 'warning' | 'error'
+  action: ImportConflictAction
+  conflictType?: 'duplicate_key' | 'will_overwrite' | null
+  existingRecordId?: string
+  existingRecordSnapshot?: Record<string, unknown>
+}
+
+export interface ImportPreviewResult {
+  batchId: string
+  targetEntity: ImportTargetEntity
+  totalRecords: number
+  validRecords: number
+  warningRecords: number
+  errorRecords: number
+  fieldMapping: ImportFieldMapping[]
+  unmappedSourceFields: string[]
+  missingRequiredFields: string[]
+  duplicateKeyCount: number
+  willOverwriteCount: number
+  records: ImportPreviewRecord[]
+  primaryKeyField: string
+  createdAt: number
+}
+
+export interface ImportConfigSnapshot {
+  targetEntity: ImportTargetEntity
+  fieldMapping: ImportFieldMapping[]
+  conflictAction: ImportConflictAction
+  primaryKeyField: string
+  sourceFileName: string
+  sourceFileType: 'csv' | 'json'
+  totalRecords: number
+}
+
+export interface ImportBatch {
+  id: string
+  batchName: string
+  sourceFileName: string
+  sourceFileType: 'csv' | 'json'
+  targetEntity: ImportTargetEntity
+  status: ImportBatchStatus
+  totalRecords: number
+  processedRecords: number
+  successRecords: number
+  failedRecords: number
+  skippedRecords: number
+  pendingRecords: number
+  progress: number
+  fieldMapping: ImportFieldMapping[]
+  conflictAction: ImportConflictAction
+  primaryKeyField: string
+  configSnapshot: ImportConfigSnapshot
+  previewResult?: ImportPreviewResult | null
+  createdBy: string
+  createdAt: number
+  startedAt?: number
+  completedAt?: number
+  errorMessage?: string
+  importLog?: Array<{
+    timestamp: number
+    step: string
+    message: string
+    severity: 'info' | 'warning' | 'error'
+  }>
+  rollbackInfo?: {
+    rolledBackAt: number
+    rolledBackBy: string
+    recordCount: number
+    successCount: number
+    failedCount: number
+    reason?: string
+  } | null
+  rollbackLog?: Array<{
+    timestamp: number
+    step: string
+    message: string
+    severity: 'info' | 'warning' | 'error'
+  }> | null
+  importedRecordIds?: string[]
+  overwrittenRecordSnapshots?: Array<{
+    recordId: string
+    before: Record<string, unknown>
+    after: Record<string, unknown>
+  }>
+  permissionScope: 'admin' | 'inspector' | 'all'
+}
+
 export type ExportStatus = 'pending' | 'success' | 'failed' | 'interrupted'
 
 export type TriggerSource = 'logs-toolbar' | 'task-detail' | 'admin-review' | 'batch-action' | 'unknown'

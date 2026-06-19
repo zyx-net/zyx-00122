@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Template, Task, Draft, Submission, Anomaly, EventLog, ExportRecord } from '@/types'
+import type { Template, Task, Draft, Submission, Anomaly, EventLog, ExportRecord, ImportBatch } from '@/types'
 
 class InspectionDB extends Dexie {
   templates!: Table<Template>
@@ -9,10 +9,11 @@ class InspectionDB extends Dexie {
   anomalies!: Table<Anomaly>
   eventLogs!: Table<EventLog>
   exportRecords!: Table<ExportRecord>
+  importBatches!: Table<ImportBatch>
 
   constructor() {
     super('InspectionDB')
-    this.version(2).stores({
+    this.version(3).stores({
       templates: 'id, name, version',
       tasks: 'id, templateId, assignee, status',
       drafts: 'id, taskId',
@@ -20,6 +21,7 @@ class InspectionDB extends Dexie {
       anomalies: 'id, taskId, checkItemId',
       eventLogs: 'id, taskId, action, timestamp',
       exportRecords: 'id, triggeredAt, status',
+      importBatches: 'id, targetEntity, status, createdAt, createdBy, permissionScope',
     })
   }
 }
