@@ -83,6 +83,19 @@ export interface EventLog {
 
 export type UserRole = 'inspector' | 'admin'
 
+export interface SystemUser {
+  username: string
+  displayName: string
+  role: UserRole
+}
+
+export interface CurrentSessionUser {
+  username: string
+  displayName: string
+  role: UserRole
+  loginAt: number
+}
+
 export type ImportTargetEntity = 'tasks' | 'templates' | 'anomalies' | 'eventLogs' | 'submissions' | 'drafts'
 
 export type ImportBatchStatus =

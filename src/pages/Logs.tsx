@@ -827,6 +827,8 @@ export default function Logs() {
     }
   }
 
+  const getCurrentDisplayName = useAppStore((s) => s.getCurrentDisplayName)
+
   const handleExportClick = async () => {
     if (isExporting) {
       addToast('正在导出中，请稍候...', 'warning')
@@ -875,7 +877,7 @@ export default function Logs() {
       const exportId = await createExportRecord(
         exportFilter,
         selectedTypes,
-        role === 'admin' ? '管理员' : '巡检员',
+        getCurrentDisplayName(),
         {
           taskSnapshot,
           logSnapshot,

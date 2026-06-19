@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ClipboardList, AlertTriangle, FileText, LayoutTemplate, CheckSquare, Shield, Upload } from 'lucide-react'
+import {
+  ArrowLeft, ClipboardList, AlertTriangle, FileText, LayoutTemplate,
+  CheckSquare, Shield, Upload, User, X, LogOut, ChevronDown
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { UserRole } from '@/types'
+import type { SystemUser, UserRole } from '@/types'
+import { useAppStore } from '@/stores/useAppStore'
 
 interface LayoutProps {
   title?: string
@@ -33,12 +37,35 @@ export default function Layout({ title = '离线巡检', onBack, rightAction, sh
   const location = useLocation()
   const navigate = useNavigate()
   const tabs = navRole === 'admin' ? adminTabs : inspectorTabs
+  const currentUser = useAppStore((s) => s.currentUser)
+  const switchUser = useAppStore((s) => s.switchUser)
+  const clearSession = useAppStore((s) => s.clearSession)
+  const getUsersByRole = useAppStore((s) => s.getUsersByRole)
 
   const [activeTab, setActiveTab] = useState(location.pathname)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+
+  const roleUsers = currentUser ? getUsersByRole(currentUser.role) : []
 
   const handleTabClick = (path: string) => {
     setActiveTab(path)
     navigate(path)
+  }
+
+  const handleSwitchUser = (user: SystemUser) => {
+    switchUser(user.username)
+    setShowUserMenu(false)
+    if (user.role === 'inspector') {
+      navigate('/inspector/tasks')
+    } else {
+      navigate('/admin/templates')
+    }
+  }
+
+  const handleLogout = () => {
+    clearSession()
+    setShowUserMenu(false)
+    navigate('/')
   }
 
   return (
@@ -51,9 +78,94 @@ export default function Layout({ title = '离线巡检', onBack, rightAction, sh
             </button>
           )}
         </div>
-        <h1 className="flex-1 text-center text-lg font-semibold">{title}</h1>
-        <div className="flex w-11 items-center justify-center">{rightAction}</div>
+        <div className="flex-1 text-center">
+          {currentUser ? (
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex items-center justify-center gap-1 mx-auto"
+              data-testid="current-user-button"
+            >
+              <span className="text-lg font-semibold">{title}</span>
+              <ChevronDown className="h-4 w-4 opacity-70" />
+            </button>
+          ) : (
+            <h1 className="text-lg font-semibold">{title}</h1>
+          )}
+          {currentUser && (
+            <p className="text-[10px] opacity-75 font-mono">
+              {currentUser.displayName} · {currentUser.username}
+            </p>
+          )}
+        </div>
+        <div className="flex w-11 items-center justify-center">
+          {rightAction}
+        </div>
       </header>
+
+      {showUserMenu && currentUser && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-end" onClick={() => setShowUserMenu(false)}>
+          <div
+            className="bg-white w-72 rounded-bl-2xl shadow-xl p-4"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="user-switch-menu"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                  <User className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">{currentUser.displayName}</p>
+                  <p className="text-xs text-gray-500 font-mono">{currentUser.username}</p>
+                  <p className="text-[10px] text-gray-400">
+                    登录于 {new Date(currentUser.loginAt).toLocaleTimeString('zh-CN')}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowUserMenu(false)}
+                className="p-1 rounded hover:bg-gray-100 text-gray-500"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="border-t border-gray-100 pt-3 mb-3">
+              <p className="text-xs text-gray-500 mb-2">切换同角色用户</p>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {roleUsers.map((user) => (
+                  <button
+                    key={user.username}
+                    onClick={() => handleSwitchUser(user)}
+                    className={cn(
+                      'w-full flex items-center gap-2 p-2 rounded-lg text-left transition-colors',
+                      user.username === currentUser.username
+                        ? 'bg-primary/10 text-primary'
+                        : 'hover:bg-gray-50 text-gray-700'
+                    )}
+                    data-testid={`switch-user-${user.username}`}
+                  >
+                    <User className="h-4 w-4" />
+                    <span className="text-sm">{user.displayName}</span>
+                    {user.username === currentUser.username && (
+                      <span className="ml-auto text-[10px] bg-primary/20 px-1.5 py-0.5 rounded">当前</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 p-3 rounded-lg bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors"
+              data-testid="logout-button"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="text-sm">退出登录</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 overflow-y-auto pb-16">
         {children ?? <Outlet />}

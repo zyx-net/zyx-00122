@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { db } from '@/db'
+import { useAppStore } from '@/stores/useAppStore'
 import type { Task, TaskStatus, Draft, Submission, Anomaly, EventLog, EventAction } from '@/types'
 
 interface TaskState {
@@ -29,7 +30,12 @@ interface TaskState {
   createTaskFromTemplate: (templateId: string, title: string) => Promise<string>
 }
 
-export const useTaskStore = create<TaskState>((set) => ({
+function getCurrentActor(): string {
+  const appState = useAppStore.getState()
+  return appState.getCurrentDisplayName() || '未知用户'
+}
+
+export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
   currentDraft: null,
   submissions: [],
@@ -106,7 +112,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         id: `log-${now}-${Math.random().toString(36).slice(2, 7)}`,
         taskId,
         action: 'draft_load',
-        actor: task?.assignee || '巡检员',
+        actor: task?.assignee || getCurrentActor(),
         detail: `草稿已恢复（模板 v${draft.templateVersion}，保存于 ${new Date(draft.savedAt).toLocaleString('zh-CN')}，共 ${Object.keys(draft.answers).length} 项答案）`,
         timestamp: now,
       }
@@ -135,7 +141,7 @@ export const useTaskStore = create<TaskState>((set) => ({
       id: `log-${now}-${Math.random().toString(36).slice(2, 7)}`,
       taskId,
       action: 'draft_save',
-      actor: task.assignee || '巡检员',
+      actor: task.assignee || getCurrentActor(),
       detail: `草稿已保存（模板 v${templateVersion}，共 ${Object.keys(answers).length} 项答案）${existing ? '（更新）' : '（新建）'}`,
       timestamp: now,
     }
@@ -280,7 +286,7 @@ export const useTaskStore = create<TaskState>((set) => ({
       id: `log-${now}-rw`,
       taskId,
       action: 'rework',
-      actor: '管理员',
+      actor: getCurrentActor(),
       detail: `退回任务，原因：${reason}`,
       timestamp: now,
     }
@@ -312,7 +318,7 @@ export const useTaskStore = create<TaskState>((set) => ({
       id: `log-${now}-ap`,
       taskId,
       action: 'approve',
-      actor: '管理员',
+      actor: getCurrentActor(),
       detail: '审核通过',
       timestamp: now,
     }
@@ -349,7 +355,7 @@ export const useTaskStore = create<TaskState>((set) => ({
       id: `log-${now}-anom`,
       taskId,
       action: 'anomaly',
-      actor: '巡检员',
+      actor: getCurrentActor(),
       detail: `上报异常：${checkItemLabel} - ${description}`,
       timestamp: now,
     }

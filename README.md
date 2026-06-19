@@ -55,8 +55,22 @@
 - **授权模板管理**: 支持 JSON 导入/导出、冲突检测（同名模板、未知用户、哈希不匹配）、一键应用模板
 - **撤销与恢复**: 撤销不删除数据，标记 isRevoked=true，可随时恢复
 - **持久化保证**: 使用 IndexedDB (Dexie v4) + Zustand persist，刷新页面、重开应用后状态完整保留
+- **统一身份状态层**: 所有页面共享同一用户会话，支持实时用户切换、刷新/重启后状态保持
 
-### 系统内置用户
+### 统一身份状态层
+
+#### 核心设计
+将用户身份从角色级提升到具体用户级，所有页面共享同一状态源：
+
+| 特性 | 说明 |
+|------|------|
+| 👤 **具体用户登录** | 不再写死为"巡检员张三"，可选择张三、李四、王五、赵六等具体用户 |
+| 🔄 **实时切换** | 任意页面点击顶部标题可打开用户切换菜单，同角色内无缝切换 |
+| 📦 **状态共享** | Home、ImportCenter、AuthorizationLedger 等所有页面从 `useAppStore` 获取当前用户 |
+| 💾 **持久化保持** | 用户会话使用 Zustand persist 存储，刷新页面、重启应用后自动恢复 |
+| 🔐 **权限统一判断** | 所有授权判断（查看/回滚/导出/交接）统一走 `useAuthorizationStore` 的 `hasPermission` 函数 |
+
+#### 系统内置用户
 | username | displayName | 角色 |
 |----------|-------------|------|
 | admin | 管理员 | admin |
@@ -65,6 +79,10 @@
 | inspector_wangwu | 巡检员王五 | inspector |
 | manager_zhao | 主管赵六 | inspector |
 | auditor_sun | 审计员孙七 | inspector |
+
+#### 身份切换入口
+1. **首页**: 先选角色 → 再选具体用户
+2. **任意页面**: 点击顶部标题栏 → 弹出用户菜单 → 切换同角色用户或退出登录
 
 ### 数据库 Schema (v4)
 新增三张表：
@@ -226,10 +244,10 @@ src/
 │   ├── ImportCenter.tsx # 导入预演与回滚中心（集成按人授权、脱敏摘要）
 │   └── AuthorizationLedger.tsx # 批次授权台账主页面（台账/模板/时间线三个 Tab）
 ├── stores/              # Zustand 状态管理
-│   ├── useAppStore.ts
+│   ├── useAppStore.ts   # 统一身份状态层（用户会话、角色管理、实时切换、持久化）
 │   ├── useTemplateStore.ts
 │   ├── useTaskStore.ts
-│   ├── useImportStore.ts # 导入与回滚状态管理（已接入按人授权逻辑）
+│   ├── useImportStore.ts # 导入与回滚状态管理（从 useAppStore 获取当前用户）
 │   ├── useExportStore.ts
 │   └── useAuthorizationStore.ts # 批次授权状态管理（核心：权限判断、快照、模板、时间线）
 ├── db/

@@ -10,19 +10,28 @@ import type {
   ImportBatch,
   OperationTimelineAction,
   OperationTimelineEntry,
+  SystemUser,
   UserRole,
 } from '@/types'
 
 const AUTH_PERSIST_KEY = 'inspection-authorization-ledger'
 
-const SYSTEM_USERS = [
-  { username: 'admin', displayName: '管理员' },
-  { username: 'inspector_zhangsan', displayName: '巡检员张三' },
-  { username: 'inspector_lisi', displayName: '巡检员李四' },
-  { username: 'inspector_wangwu', displayName: '巡检员王五' },
-  { username: 'manager_zhao', displayName: '主管赵六' },
-  { username: 'auditor_sun', displayName: '审计员孙七' },
+export const SYSTEM_USERS: SystemUser[] = [
+  { username: 'admin', displayName: '管理员', role: 'admin' },
+  { username: 'inspector_zhangsan', displayName: '巡检员张三', role: 'inspector' },
+  { username: 'inspector_lisi', displayName: '巡检员李四', role: 'inspector' },
+  { username: 'inspector_wangwu', displayName: '巡检员王五', role: 'inspector' },
+  { username: 'manager_zhao', displayName: '主管赵六', role: 'inspector' },
+  { username: 'auditor_sun', displayName: '审计员孙七', role: 'inspector' },
 ]
+
+export function getUserByUsername(username: string): SystemUser | undefined {
+  return SYSTEM_USERS.find(u => u.username === username)
+}
+
+export function getUsersByRole(role: UserRole): SystemUser[] {
+  return SYSTEM_USERS.filter(u => u.role === role)
+}
 
 function hashContent(str: string): string {
   let hash = 0
@@ -456,8 +465,8 @@ export const useAuthorizationStore = create<AuthorizationState>()(
             ? auth.viewers
             : [...auth.viewers, toPerson],
           rollbackers: auth.rollbackers.some(p => p.username === toUser)
-            ? auth.rollbackers
-            : [...auth.rollbackers, toPerson],
+            ? auth.rollbackers.filter(p => p.username !== fromUser)
+            : [...auth.rollbackers.filter(p => p.username !== fromUser), toPerson],
           handoverPersons: auth.handoverPersons.map(p =>
             p.username === fromUser ? toPerson : p
           ).filter(p => p.username !== fromUser).concat(
@@ -872,4 +881,4 @@ export const useAuthorizationStore = create<AuthorizationState>()(
   )
 )
 
-export { SYSTEM_USERS, isExpired, hasPermission }
+export { isExpired, hasPermission }

@@ -22,6 +22,8 @@ export default function TaskList() {
   const [activeTab, setActiveTab] = useState<'available' | 'mine'>('available')
   const { tasks, fetchTasks, claimTask, readDraft } = useTaskStore()
   const addToast = useAppStore((s) => s.addToast)
+  const getCurrentDisplayName = useAppStore((s) => s.getCurrentDisplayName)
+  const currentUser = useAppStore((s) => s.currentUser)
   const [claimingId, setClaimingId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, number>>({})
 
@@ -47,7 +49,8 @@ export default function TaskList() {
   const handleClaim = async (taskId: string) => {
     try {
       setClaimingId(taskId)
-      await claimTask(taskId, '巡检员张三')
+      const displayName = getCurrentDisplayName()
+      await claimTask(taskId, displayName)
       addToast('任务领取成功', 'success')
       setActiveTab('mine')
     } catch (e) {

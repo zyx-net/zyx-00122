@@ -23,6 +23,7 @@ export default function Export() {
 
   const addToast = useAppStore((s) => s.addToast)
   const role = useAppStore((s) => s.role)
+  const getCurrentDisplayName = useAppStore((s) => s.getCurrentDisplayName)
 
   const {
     updateExportStatus,
@@ -165,7 +166,7 @@ export default function Export() {
 
       const exportData: Record<string, unknown> = {
         exportedAt: Date.now(),
-        exportedBy: role === 'admin' ? '管理员' : '巡检员',
+        exportedBy: getCurrentDisplayName(),
         appVersion: '1.0.0',
       }
 

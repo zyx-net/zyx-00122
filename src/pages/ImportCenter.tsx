@@ -858,8 +858,12 @@ export default function ImportCenter() {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const currentUsername = role === 'admin' ? 'admin' : 'inspector_zhangsan'
-  const currentDisplayName = role === 'admin' ? '管理员' : '巡检员张三'
+  const getCurrentUsername = useAppStore((s) => s.getCurrentUsername)
+  const getCurrentDisplayName = useAppStore((s) => s.getCurrentDisplayName)
+  const currentUser = useAppStore((s) => s.currentUser)
+
+  const currentUsername = getCurrentUsername()
+  const currentDisplayName = getCurrentDisplayName()
 
   useEffect(() => {
     fetchBatches(role || undefined)
@@ -874,15 +878,16 @@ export default function ImportCenter() {
     }
     const authorized: ImportBatch[] = []
     const desensitized: DesensitizedBatchSummary[] = []
+    const username = getCurrentUsername()
     filtered.forEach(batch => {
-      if (canViewBatch(batch, role, currentUsername)) {
+      if (canViewBatch(batch, role, username)) {
         authorized.push(batch)
       } else {
-        desensitized.push(getDesensitizedSummary(batch, currentUsername, role))
+        desensitized.push(getDesensitizedSummary(batch, username, role))
       }
     })
     return { authorizedBatches: authorized, desensitizedBatches: desensitized }
-  }, [batches, statusFilter, role, canViewBatch, getDesensitizedSummary, currentUsername])
+  }, [batches, statusFilter, role, canViewBatch, getDesensitizedSummary, getCurrentUsername, currentUser])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]

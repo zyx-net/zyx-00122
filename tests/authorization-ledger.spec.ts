@@ -770,16 +770,23 @@ async function scenario6_RevokeAndRestore(ctx: { batchId: string; authId: string
     'auth_restore'
   )
 
-  // 6.6 恢复后：张三权限重新生效
+  // 6.6 恢复后：权限状态恢复到撤销前（即交接后的状态）
+  // 注意：由于场景 3 中已交接给赵六，张三已失去回滚权限，赵六获得回滚权限
+  // 撤销和恢复都不会改变交接后的权限分配
   assert(
     authStore.canViewBatch(batch, 'inspector_zhangsan', 'inspector'),
     '恢复后张三可查看',
-    '授权恢复生效'
+    '张三仍在查看人列表中'
   )
   assert(
-    authStore.canRollbackBatch(batch, 'inspector_zhangsan', 'inspector'),
-    '恢复后张三可回滚',
-    '授权恢复生效'
+    !authStore.canRollbackBatch(batch, 'inspector_zhangsan', 'inspector'),
+    '恢复后张三不可回滚',
+    '交接后张三已失去回滚权限，撤销恢复不改变此状态'
+  )
+  assert(
+    authStore.canRollbackBatch(batch, 'manager_zhao', 'inspector'),
+    '恢复后赵六可回滚',
+    '赵六作为交接后的回滚人拥有回滚权限'
   )
 
   // 6.7 历史快照完整保留（撤销/恢复不生成新快照）

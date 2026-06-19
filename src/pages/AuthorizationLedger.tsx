@@ -99,14 +99,16 @@ export default function AuthorizationLedger() {
   const [templateImportJson, setTemplateImportJson] = useState('')
   const [importResultMsg, setImportResultMsg] = useState<string | null>(null)
 
-  const currentUser = role === 'admin' ? 'admin' : 'inspector_zhangsan'
+  const getCurrentUsername = useAppStore((s) => s.getCurrentUsername)
+  const currentSessionUser = useAppStore((s) => s.currentUser)
+  const currentUser = getCurrentUsername()
 
   useEffect(() => {
     fetchAuthorizations()
     fetchTemplates()
     fetchTimeline()
     fetchBatches(role || undefined)
-  }, [fetchAuthorizations, fetchTemplates, fetchTimeline, fetchBatches, role])
+  }, [fetchAuthorizations, fetchTemplates, fetchTimeline, fetchBatches, role, getCurrentUsername, currentSessionUser])
 
   const selectedAuth = useMemo(() => {
     if (!selectedAuthId) return null
