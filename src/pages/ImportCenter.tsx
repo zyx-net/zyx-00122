@@ -26,20 +26,25 @@ import {
   Zap,
   Filter,
   Search,
+  Lock,
+  Unlock,
 } from 'lucide-react'
 import Layout from '@/components/Layout'
 import EmptyState from '@/components/EmptyState'
+import AuthorizationConfigModal, { type AuthorizationConfigResult } from '@/components/AuthorizationConfigModal'
 import { useAppStore } from '@/stores/useAppStore'
 import {
   useImportStore,
   targetEntityConfig,
 } from '@/stores/useImportStore'
+import { useAuthorizationStore } from '@/stores/useAuthorizationStore'
 import type {
   ImportBatch,
   ImportBatchStatus,
   ImportConflictAction,
   ImportPreviewRecord,
   ImportTargetEntity,
+  DesensitizedBatchSummary,
 } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -89,19 +94,81 @@ const actionColors: Record<ImportConflictAction, string> = {
   pending: 'bg-amber-100 text-amber-700',
 }
 
+function DesensitizedBatchCard({
+  summary,
+}: {
+  summary: DesensitizedBatchSummary
+}) {
+  const status = statusConfig[summary.status as ImportBatchStatus] || statusConfig.previewing
+  const StatusIcon = status.icon
+
+  return (
+    <div
+      data-testid="desensitized-batch-card"
+      className="rounded-lg border border-gray-200 p-3 mb-2 bg-gray-50"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <StatusIcon className={cn('h-4 w-4 flex-shrink-0 opacity-60', status.color)} />
+            <span className={cn('text-xs font-medium opacity-60', status.color)}>{status.label}</span>
+            <span className="text-xs text-gray-400 font-mono">
+              {formatTime(summary.createdAt)}
+            </span>
+            <Lock className="h-3 w-3 text-gray-400" />
+          </div>
+          <p className="text-sm font-medium text-gray-500 mb-1 truncate font-mono">
+            {summary.batchName}
+          </p>
+          <p className="text-xs text-gray-400 mb-1">
+            <span className="text-gray-400">操作人：</span>
+            {summary.createdBy}
+          </p>
+          <p className="text-xs text-gray-400 mb-1">
+            <span className="text-gray-400">目标：</span>
+            {targetEntityConfig[summary.targetEntity as ImportTargetEntity]?.label || summary.targetEntity}
+          </p>
+          {summary.totalRecords > 0 && (
+            <div className="mt-2 flex gap-4 text-[11px] text-gray-400">
+              <span>共 {summary.totalRecords} 条</span>
+            </div>
+          )}
+          <div className="mt-2 text-[11px] text-amber-600 bg-amber-50 rounded px-2 py-1 flex items-center gap-1">
+            <Shield className="h-3 w-3" />
+            {summary.authHint}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1 flex-shrink-0">
+          <span className="flex items-center gap-1 text-xs text-gray-400 cursor-not-allowed">
+            <Lock className="h-3.5 w-3.5" />
+            无权限
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function BatchCard({
   batch,
   onView,
   onRollback,
+  onExport,
   canRollback,
+  canExport,
 }: {
   batch: ImportBatch
   onView: (b: ImportBatch) => void
   onRollback: (b: ImportBatch) => void
+  onExport?: (b: ImportBatch) => void
   canRollback: boolean
+  canExport: boolean
 }) {
   const status = statusConfig[batch.status] || statusConfig.previewing
   const StatusIcon = status.icon
+  const authStore = useAuthorizationStore.getState()
+  const auth = authStore.getAuthorizationByBatchId(batch.id)
+  const hasAuth = !!auth && !auth.isRevoked
 
   return (
     <div
@@ -122,6 +189,17 @@ function BatchCard({
             <span className="text-xs text-gray-400 font-mono">
               {formatTime(batch.createdAt)}
             </span>
+            {hasAuth ? (
+              <span className="flex items-center gap-0.5 text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                <Unlock className="h-2.5 w-2.5" />
+                已授权 v{auth?.configVersion}
+              </span>
+            ) : (
+              <span className="flex items-center gap-0.5 text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                <Lock className="h-2.5 w-2.5" />
+                角色级
+              </span>
+            )}
           </div>
           <p className="text-sm font-medium text-gray-900 mb-1 truncate">
             {batch.batchName}
@@ -192,6 +270,16 @@ function BatchCard({
             <Eye className="h-3.5 w-3.5" />
             详情
           </button>
+          {canExport && onExport && (
+            <button
+              onClick={() => onExport(batch)}
+              className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700"
+              data-testid="export-batch-button"
+            >
+              <Download className="h-3.5 w-3.5" />
+              导出
+            </button>
+          )}
           {(batch.status === 'success' || batch.status === 'partial_success') && canRollback && (
             <button
               onClick={() => onRollback(batch)}
@@ -740,8 +828,16 @@ export default function ImportCenter() {
     loadPersistedData,
     canViewBatch,
     canRollbackBatch,
+    canExportBatch,
     setCurrentPreview,
   } = useImportStore()
+
+  const {
+    createAuthorization,
+    fetchAuthorizations,
+    getDesensitizedSummary,
+    getAuthorizationByBatchId,
+  } = useAuthorizationStore()
 
   const [view, setView] = useState<'list' | 'preview'>('list')
   const [targetEntity, setTargetEntity] = useState<ImportTargetEntity>('tasks')
@@ -756,20 +852,37 @@ export default function ImportCenter() {
   const [previewFilter, setPreviewFilter] = useState<'all' | 'error' | 'warning' | 'conflict'>('all')
   const [statusFilter, setStatusFilter] = useState<ImportBatchStatus | 'all'>('all')
 
+  const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [authModalBatchId, setAuthModalBatchId] = useState<string | null>(null)
+  const [pendingAuthBatchId, setPendingAuthBatchId] = useState<string | null>(null)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const currentUsername = role === 'admin' ? 'admin' : 'inspector_zhangsan'
+  const currentDisplayName = role === 'admin' ? '管理员' : '巡检员张三'
 
   useEffect(() => {
     fetchBatches(role || undefined)
     loadPersistedData()
-  }, [fetchBatches, loadPersistedData, role])
+    fetchAuthorizations()
+  }, [fetchBatches, loadPersistedData, role, fetchAuthorizations])
 
-  const visibleBatches = useMemo(() => {
-    let result = batches.filter(b => canViewBatch(b, role))
+  const { authorizedBatches, desensitizedBatches } = useMemo(() => {
+    let filtered = batches
     if (statusFilter !== 'all') {
-      result = result.filter(b => b.status === statusFilter)
+      filtered = filtered.filter(b => b.status === statusFilter)
     }
-    return result
-  }, [batches, statusFilter, role, canViewBatch])
+    const authorized: ImportBatch[] = []
+    const desensitized: DesensitizedBatchSummary[] = []
+    filtered.forEach(batch => {
+      if (canViewBatch(batch, role, currentUsername)) {
+        authorized.push(batch)
+      } else {
+        desensitized.push(getDesensitizedSummary(batch, currentUsername, role))
+      }
+    })
+    return { authorizedBatches: authorized, desensitizedBatches: desensitized }
+  }, [batches, statusFilter, role, canViewBatch, getDesensitizedSummary, currentUsername])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -782,7 +895,6 @@ export default function ImportCenter() {
     }
 
     const fileType = ext as 'csv' | 'json'
-    const userName = role === 'admin' ? '管理员' : '巡检员'
     const permissionScope = role === 'admin' ? 'admin' : 'all'
 
     setIsUploading(true)
@@ -792,7 +904,7 @@ export default function ImportCenter() {
         targetEntity,
         file.name,
         fileType,
-        userName,
+        currentDisplayName,
         permissionScope
       )
 
@@ -826,10 +938,14 @@ export default function ImportCenter() {
       await confirmImport(currentPreview.batchId, conflictAction, recordActions)
       setIsImporting(true)
       await executeImport(currentPreview.batchId)
-      addToast('导入完成', 'success')
+      addToast('导入完成，请配置批次授权', 'success')
       setView('list')
       setCurrentPreview(null)
+      setPendingAuthBatchId(currentPreview.batchId)
+      setAuthModalBatchId(currentPreview.batchId)
+      setAuthModalOpen(true)
       fetchBatches(role || undefined)
+      fetchAuthorizations()
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '导入失败'
       addToast(`导入失败：${errorMsg}`, 'error')
@@ -838,17 +954,48 @@ export default function ImportCenter() {
     }
   }
 
+  const handleAuthConfirm = async (result: AuthorizationConfigResult) => {
+    if (!authModalBatchId) return
+    try {
+      const existingAuth = getAuthorizationByBatchId(authModalBatchId)
+      if (existingAuth && !existingAuth.isRevoked) {
+        addToast('该批次已配置授权', 'info')
+      } else {
+        await createAuthorization({
+          batchId: authModalBatchId,
+          viewerUsernames: result.viewerUsernames,
+          rollbackerUsernames: result.rollbackerUsernames,
+          handoverUsernames: result.handoverUsernames,
+          expiresAt: result.expiresAt,
+          notes: result.notes,
+          createdBy: currentUsername,
+        })
+        addToast('授权配置已保存', 'success')
+      }
+      setAuthModalOpen(false)
+      setAuthModalBatchId(null)
+      setPendingAuthBatchId(null)
+      fetchAuthorizations()
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '授权配置失败'
+      addToast(`授权配置失败：${errorMsg}`, 'error')
+    }
+  }
+
   const handleRollback = async (batch: ImportBatch) => {
+    if (!canRollbackBatch(batch, role, currentUsername)) {
+      addToast('您没有回滚该批次的权限', 'error')
+      return
+    }
     setRollbackBatchId(batch.id)
   }
 
   const handleConfirmRollback = async (reason: string) => {
     if (!rollbackBatchId) return
 
-    const userName = role === 'admin' ? '管理员' : '巡检员'
     setIsRollingBack(true)
     try {
-      await rollbackBatch(rollbackBatchId, userName, reason || undefined)
+      await rollbackBatch(rollbackBatchId, currentDisplayName, reason || undefined)
       addToast('回滚完成', 'success')
       setRollbackBatchId(null)
       setDetailBatch(null)
@@ -877,7 +1024,35 @@ export default function ImportCenter() {
   }
 
   const handleViewDetail = (batch: ImportBatch) => {
+    if (!canViewBatch(batch, role, currentUsername)) {
+      addToast('您没有查看该批次详情的权限', 'error')
+      return
+    }
     setDetailBatch(batch)
+  }
+
+  const handleExportBatch = (batch: ImportBatch) => {
+    if (!canExportBatch(batch, role, currentUsername)) {
+      addToast('您没有导出该批次的权限', 'error')
+      return
+    }
+    const exportData = {
+      schemaVersion: 1,
+      exportType: 'import_batch',
+      exportedAt: Date.now(),
+      exportedBy: currentUsername,
+      batch,
+    }
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `batch-${batch.id}-${Date.now()}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    addToast('批次数据已导出', 'success')
   }
 
   const handleBackToList = () => {
@@ -1038,18 +1213,33 @@ export default function ImportCenter() {
           </div>
 
           <div className="space-y-2" data-testid="batch-list">
-            {visibleBatches.length === 0 ? (
+            {authorizedBatches.length === 0 && desensitizedBatches.length === 0 ? (
               <EmptyState message="暂无导入批次记录" />
             ) : (
-              visibleBatches.map(batch => (
-                <BatchCard
-                  key={batch.id}
-                  batch={batch}
-                  onView={handleViewDetail}
-                  onRollback={handleRollback}
-                  canRollback={canRollbackBatch(batch, role, role === 'admin' ? '管理员' : '巡检员')}
-                />
-              ))
+              <>
+                {authorizedBatches.map(batch => (
+                  <BatchCard
+                    key={batch.id}
+                    batch={batch}
+                    onView={handleViewDetail}
+                    onRollback={handleRollback}
+                    onExport={handleExportBatch}
+                    canRollback={canRollbackBatch(batch, role, currentUsername)}
+                    canExport={canExportBatch(batch, role, currentUsername)}
+                  />
+                ))}
+                {desensitizedBatches.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                      <Shield className="h-3 w-3" />
+                      以下 {desensitizedBatches.length} 个批次您无权限查看详情
+                    </p>
+                    {desensitizedBatches.map(summary => (
+                      <DesensitizedBatchCard key={summary.batchId} summary={summary} />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1268,7 +1458,7 @@ export default function ImportCenter() {
           batch={detailBatch}
           onClose={() => setDetailBatch(null)}
           onRollback={() => handleRollback(detailBatch)}
-          canRollback={canRollbackBatch(detailBatch, role, role === 'admin' ? '管理员' : '巡检员')}
+          canRollback={canRollbackBatch(detailBatch, role, currentUsername)}
         />
       )}
 
@@ -1277,6 +1467,22 @@ export default function ImportCenter() {
           batch={rollbackTargetBatch}
           onConfirm={handleConfirmRollback}
           onCancel={() => setRollbackBatchId(null)}
+        />
+      )}
+
+      {authModalOpen && authModalBatchId && (
+        <AuthorizationConfigModal
+          open={authModalOpen}
+          onClose={() => {
+            setAuthModalOpen(false)
+            setAuthModalBatchId(null)
+            setPendingAuthBatchId(null)
+          }}
+          onConfirm={handleAuthConfirm}
+          batchId={authModalBatchId}
+          mode="create"
+          existingAuth={getAuthorizationByBatchId(authModalBatchId)}
+          createdBy={currentUsername}
         />
       )}
     </Layout>

@@ -30,6 +30,47 @@
 ### 公共模块
 - 📜 **事件日志**: 记录所有操作（领取/草稿/提交/退回/异常/拒绝），支持按类型筛选
 - 💾 **数据导出**: 选择数据范围，导出 JSON 文件
+- 🔐 **导入预演与回滚**: CSV/JSON 文件预演、冲突处理、正式导入、回滚恢复
+- 🛡️ **批次授权台账**: 按人授权（查看人/回滚人/接手人）、授权快照、操作时间线、授权模板导入导出、撤销恢复、脱敏摘要
+
+## 批次授权台账
+
+### 权限模型
+将导入预演、正式导入和回滚权限从按角色（admin/inspector）放开，改为**按人授权 + 按批次交接**：
+
+| 权限层级 | 权限说明 |
+|---------|---------|
+| 👁️ 查看人 (viewer) | 可查看批次详情、可导出 |
+| 🔄 回滚人 (rollbacker) | 包含查看人权限 + 可执行回滚 |
+| 🤝 接手人 (handover) | 包含回滚人权限 + 可交接批次给他人 |
+| 👑 创建者 (createdBy) | 拥有全部权限，可撤销/恢复授权 |
+| 🛡️ 管理员 (admin) | 全局放行，拥有全部权限 |
+
+### 核心特性
+- **创建批次授权**: 创建批次后自动弹出授权配置，点选查看人/回滚人/接手人、失效时间、授权备注
+- **不可变授权快照**: 每次授权变更生成新快照（AuthorizationSnapshot），旧快照保留不可篡改
+- **配置版本号**: configVersion 自动递增，版本历史可追溯
+- **操作时间线**: 所有授权创建/更新/撤销/恢复/交接都有时间线记录（OperationTimeline）
+- **未授权脱敏**: 同角色但未被授权的用户只能看到脱敏摘要（批次名打码、创建人打码、授权提示），不能进详情、不能导出、不能回滚
+- **授权模板管理**: 支持 JSON 导入/导出、冲突检测（同名模板、未知用户、哈希不匹配）、一键应用模板
+- **撤销与恢复**: 撤销不删除数据，标记 isRevoked=true，可随时恢复
+- **持久化保证**: 使用 IndexedDB (Dexie v4) + Zustand persist，刷新页面、重开应用后状态完整保留
+
+### 系统内置用户
+| username | displayName | 角色 |
+|----------|-------------|------|
+| admin | 管理员 | admin |
+| inspector_zhangsan | 巡检员张三 | inspector |
+| inspector_lisi | 巡检员李四 | inspector |
+| inspector_wangwu | 巡检员王五 | inspector |
+| manager_zhao | 主管赵六 | inspector |
+| auditor_sun | 审计员孙七 | inspector |
+
+### 数据库 Schema (v4)
+新增三张表：
+- `batchAuthorizations`: 批次授权记录（含快照、时间线、撤销状态）
+- `authorizationTemplates`: 授权模板（含 contentHash 内容校验）
+- `operationTimeline`: 全局操作时间线（授权、模板、交接等事件）
 
 ## 核心校验规则
 
@@ -148,6 +189,12 @@ npm run preview
 1. **巡检员流程**: 领取任务 → 填写部分检查项 → 刷新页面 → 验证草稿已恢复 → 故意缺必填项提交 → 验证被阻止 → 补齐后提交 → 查看事件日志
 2. **管理员流程**: 新建模板 → 添加点位和检查项 → 从模板创建任务 → 审核提交 → 退回并填写原因 → 验证巡检员端看到返工原因 → 重新提交后审核通过
 3. **数据一致性**: 刷新页面、重启开发服务器 → 验证草稿时间、模板版本、返工记录、异常列表、事件日志、导出数据均保持一致
+4. **批次授权台账流程**:
+   - 预演确认：管理员上传 CSV/JSON → 预演完成 → 确认导入 → 自动弹出授权配置 → 配置查看人/回滚人/接手人 → 保存
+   - 未授权拦截：切换到巡检员李四（未被授权）→ 查看批次列表 → 只能看到脱敏摘要卡片 → 点击详情被拦截 → 导出被拦截 → 回滚被拦截
+   - 交接后回滚：管理员配置接手人为巡检员张三 → 张三登录 → 可查看详情、可导出、可回滚 → 执行回滚验证
+   - 日志追溯：进入"授权台账 → 操作时间线" → 查看所有 auth_create/auth_update/auth_revoke/batch_handover/template_import 事件
+   - 重新导出与重启复核：导出授权模板为 JSON → 清空模板 → 重新导入 → 刷新页面/重启服务器 → 验证授权状态、模板、时间线均完整保留
 
 ## 项目结构
 
@@ -160,7 +207,9 @@ src/
 │   ├── ReworkHistory.tsx # 返工历史时间轴
 │   ├── StatusBadge.tsx  # 任务状态标签
 │   ├── Toast.tsx        # 消息通知
-│   └── EmptyState.tsx   # 空状态占位
+│   ├── EmptyState.tsx   # 空状态占位
+│   ├── AuthorizationConfigModal.tsx # 授权配置弹窗（创建/编辑）
+│   └── Empty.tsx
 ├── pages/
 │   ├── Home.tsx         # 首页角色选择
 │   ├── inspector/       # 巡检员页面
@@ -173,15 +222,20 @@ src/
 │   │   ├── Review.tsx
 │   │   └── ReviewDetail.tsx
 │   ├── Logs.tsx         # 事件日志
-│   └── Export.tsx       # 数据导出
+│   ├── Export.tsx       # 数据导出
+│   ├── ImportCenter.tsx # 导入预演与回滚中心（集成按人授权、脱敏摘要）
+│   └── AuthorizationLedger.tsx # 批次授权台账主页面（台账/模板/时间线三个 Tab）
 ├── stores/              # Zustand 状态管理
 │   ├── useAppStore.ts
 │   ├── useTemplateStore.ts
-│   └── useTaskStore.ts
+│   ├── useTaskStore.ts
+│   ├── useImportStore.ts # 导入与回滚状态管理（已接入按人授权逻辑）
+│   ├── useExportStore.ts
+│   └── useAuthorizationStore.ts # 批次授权状态管理（核心：权限判断、快照、模板、时间线）
 ├── db/
-│   └── index.ts         # Dexie.js IndexedDB 配置 + 种子数据
+│   └── index.ts         # Dexie.js IndexedDB 配置（v4：新增授权三张表）+ 种子数据
 ├── types/
-│   └── index.ts         # TypeScript 类型定义
-├── App.tsx              # 应用路由
+│   └── index.ts         # TypeScript 类型定义（新增授权相关 10+ 类型）
+├── App.tsx              # 应用路由（新增 /authorization-ledger 三条路由）
 └── main.tsx             # 应用入口
 ```

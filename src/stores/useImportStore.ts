@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import Dexie from 'dexie'
 import { db } from '@/db'
+import { useAuthorizationStore } from '@/stores/useAuthorizationStore'
 import type {
   ImportBatch,
   ImportBatchStatus,
@@ -414,8 +415,9 @@ interface ImportState {
   clearImportError: () => void
   loadPersistedData: () => void
   markInterruptedBatches: () => Promise<void>
-  canViewBatch: (batch: ImportBatch, role: UserRole | null) => boolean
+  canViewBatch: (batch: ImportBatch, role: UserRole | null, username?: string) => boolean
   canRollbackBatch: (batch: ImportBatch, role: UserRole | null, username?: string) => boolean
+  canExportBatch: (batch: ImportBatch, role: UserRole | null, username?: string) => boolean
 }
 
 export const useImportStore = create<ImportState>()(
@@ -428,18 +430,19 @@ export const useImportStore = create<ImportState>()(
       pendingBatches: new Set(),
       rollingBackBatches: new Set(),
 
-      canViewBatch: (batch, role) => {
-        if (!role) return false
-        if (role === 'admin') return true
-        return batch.permissionScope !== 'admin'
+      canViewBatch: (batch, role, username) => {
+        const authStore = useAuthorizationStore.getState()
+        return authStore.canViewBatch(batch, username || '', role)
       },
 
       canRollbackBatch: (batch, role, username) => {
-        if (!role) return false
-        if (role === 'admin') return true
-        if (batch.permissionScope === 'admin') return false
-        if (username && batch.createdBy === username) return true
-        return false
+        const authStore = useAuthorizationStore.getState()
+        return authStore.canRollbackBatch(batch, username || '', role)
+      },
+
+      canExportBatch: (batch, role, username) => {
+        const authStore = useAuthorizationStore.getState()
+        return authStore.canExportBatch(batch, username || '', role)
       },
 
       fetchBatches: async (role) => {

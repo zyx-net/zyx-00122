@@ -1,5 +1,8 @@
 import Dexie, { type Table } from 'dexie'
-import type { Template, Task, Draft, Submission, Anomaly, EventLog, ExportRecord, ImportBatch } from '@/types'
+import type {
+  Template, Task, Draft, Submission, Anomaly, EventLog, ExportRecord, ImportBatch,
+  BatchAuthorization, AuthorizationTemplate, OperationTimelineEntry
+} from '@/types'
 
 class InspectionDB extends Dexie {
   templates!: Table<Template>
@@ -10,6 +13,9 @@ class InspectionDB extends Dexie {
   eventLogs!: Table<EventLog>
   exportRecords!: Table<ExportRecord>
   importBatches!: Table<ImportBatch>
+  batchAuthorizations!: Table<BatchAuthorization>
+  authorizationTemplates!: Table<AuthorizationTemplate>
+  operationTimeline!: Table<OperationTimelineEntry>
 
   constructor() {
     super('InspectionDB')
@@ -21,7 +27,20 @@ class InspectionDB extends Dexie {
       anomalies: 'id, taskId, checkItemId',
       eventLogs: 'id, taskId, action, timestamp',
       exportRecords: 'id, triggeredAt, status',
-      importBatches: 'id, targetEntity, status, createdAt, createdBy, permissionScope',
+      importBatches: 'id, targetEntity, status, createdAt, createdBy, permissionScope, authorizationId',
+    })
+    this.version(4).stores({
+      templates: 'id, name, version',
+      tasks: 'id, templateId, assignee, status',
+      drafts: 'id, taskId',
+      submissions: 'id, taskId, version',
+      anomalies: 'id, taskId, checkItemId',
+      eventLogs: 'id, taskId, action, timestamp',
+      exportRecords: 'id, triggeredAt, status',
+      importBatches: 'id, targetEntity, status, createdAt, createdBy, permissionScope, authorizationId',
+      batchAuthorizations: 'id, batchId, isRevoked, expiresAt, createdBy, createdAt, updatedAt',
+      authorizationTemplates: 'id, name, version, createdBy, createdAt, updatedAt',
+      operationTimeline: 'id, batchId, templateId, action, actor, timestamp',
     })
   }
 }

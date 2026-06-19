@@ -11,6 +11,7 @@ import ReviewDetail from "@/pages/admin/ReviewDetail";
 import Logs from "@/pages/Logs";
 import Export from "@/pages/Export";
 import ImportCenter from "@/pages/ImportCenter";
+import AuthorizationLedger from "@/pages/AuthorizationLedger";
 import Toast from "@/components/Toast";
 import { seedDatabase } from "@/db";
 
@@ -27,16 +28,19 @@ function AppContent() {
         <Route path="/inspector/inspect/:taskId" element={<Inspect />} />
         <Route path="/inspector/anomalies" element={<Anomalies />} />
         <Route path="/inspector/logs" element={<Logs />} />
+        <Route path="/inspector/import-center" element={<ImportCenter />} />
+        <Route path="/inspector/authorization-ledger" element={<AuthorizationLedger />} />
         <Route path="/admin/templates" element={<Templates />} />
         <Route path="/admin/templates/:id" element={<TemplateEdit />} />
         <Route path="/admin/review" element={<Review />} />
         <Route path="/admin/review/:taskId" element={<ReviewDetail />} />
         <Route path="/admin/logs" element={<Logs />} />
+        <Route path="/admin/import-center" element={<ImportCenter />} />
+        <Route path="/admin/authorization-ledger" element={<AuthorizationLedger />} />
         <Route path="/logs/:taskId?" element={<Logs />} />
         <Route path="/export" element={<Export />} />
         <Route path="/import-center" element={<ImportCenter />} />
-        <Route path="/admin/import-center" element={<ImportCenter />} />
-        <Route path="/inspector/import-center" element={<ImportCenter />} />
+        <Route path="/authorization-ledger" element={<AuthorizationLedger />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Toast />

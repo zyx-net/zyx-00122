@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ClipboardList, AlertTriangle, FileText, LayoutTemplate, CheckSquare } from 'lucide-react'
+import { ArrowLeft, ClipboardList, AlertTriangle, FileText, LayoutTemplate, CheckSquare, Shield, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { UserRole } from '@/types'
 
@@ -16,12 +16,16 @@ interface LayoutProps {
 const inspectorTabs = [
   { path: '/inspector/tasks', label: '任务', icon: ClipboardList },
   { path: '/inspector/anomalies', label: '异常', icon: AlertTriangle },
+  { path: '/inspector/import-center', label: '导入', icon: Upload },
+  { path: '/inspector/authorization-ledger', label: '授权', icon: Shield },
   { path: '/inspector/logs', label: '日志', icon: FileText },
 ]
 
 const adminTabs = [
   { path: '/admin/templates', label: '模板', icon: LayoutTemplate },
   { path: '/admin/review', label: '审核', icon: CheckSquare },
+  { path: '/admin/import-center', label: '导入', icon: Upload },
+  { path: '/admin/authorization-ledger', label: '授权', icon: Shield },
   { path: '/admin/logs', label: '日志', icon: FileText },
 ]
 

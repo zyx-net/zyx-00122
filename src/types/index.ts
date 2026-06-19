@@ -216,6 +216,108 @@ export interface ImportBatch {
     after: Record<string, unknown>
   }>
   permissionScope: 'admin' | 'inspector' | 'all'
+  authorizationId?: string
+}
+
+export type AuthorizationPermission = 'view' | 'rollback' | 'handover' | 'export'
+
+export interface AuthorizationPerson {
+  username: string
+  displayName?: string
+  grantedAt: number
+  grantedBy: string
+}
+
+export interface AuthorizationSnapshot {
+  id: string
+  batchId: string
+  viewers: AuthorizationPerson[]
+  rollbackers: AuthorizationPerson[]
+  handoverPersons: AuthorizationPerson[]
+  expiresAt: number | null
+  notes: string
+  configVersion: number
+  createdAt: number
+  createdBy: string
+  immutable: true
+}
+
+export type OperationTimelineAction =
+  | 'auth_create'
+  | 'auth_update'
+  | 'auth_expire'
+  | 'auth_revoke'
+  | 'auth_restore'
+  | 'batch_handover'
+  | 'template_import'
+  | 'template_export'
+  | 'access_granted'
+  | 'access_denied'
+
+export interface OperationTimelineEntry {
+  id: string
+  batchId?: string
+  templateId?: string
+  action: OperationTimelineAction
+  actor: string
+  detail: string
+  timestamp: number
+  metadata?: Record<string, unknown>
+}
+
+export interface AuthorizationConflictInfo {
+  type: 'user_exists' | 'expired' | 'template_version_mismatch' | 'batch_not_found'
+  message: string
+  affectedFields?: string[]
+}
+
+export interface AuthorizationTemplate {
+  id: string
+  name: string
+  description?: string
+  viewers: string[]
+  rollbackers: string[]
+  handoverPersons: string[]
+  defaultExpiryHours?: number
+  defaultNotes?: string
+  version: number
+  createdAt: number
+  updatedAt: number
+  createdBy: string
+  contentHash?: string
+}
+
+export interface BatchAuthorization {
+  id: string
+  batchId: string
+  viewers: AuthorizationPerson[]
+  rollbackers: AuthorizationPerson[]
+  handoverPersons: AuthorizationPerson[]
+  expiresAt: number | null
+  notes: string
+  configVersion: number
+  snapshots: AuthorizationSnapshot[]
+  timeline: OperationTimelineEntry[]
+  isRevoked: boolean
+  revokedAt?: number
+  revokedBy?: string
+  revokeReason?: string
+  createdAt: number
+  createdBy: string
+  updatedAt: number
+  lastSnapshotAt?: number
+}
+
+export interface DesensitizedBatchSummary {
+  batchId: string
+  batchName: string
+  targetEntity: string
+  status: ImportBatchStatus
+  createdAt: number
+  createdBy: string
+  totalRecords: number
+  isAuthorized: false
+  authHint: string
 }
 
 export type ExportStatus = 'pending' | 'success' | 'failed' | 'interrupted'
